@@ -91,9 +91,8 @@ defmodule ExZarr.MixProject do
       {:gen_stage, "~> 1.2", optional: true},
       {:broadway, "~> 1.0", optional: true},
 
-      # Documentation
-      # compile-only; zig_doc (via zigler) requires ex_doc when building NIFs
-      {:ex_doc, "~> 0.39", only: [:dev, :test, :prod], runtime: false, override: true},
+      # Documentation — no :only: zig_doc (zigler transitive dep) requires ex_doc in prod
+      {:ex_doc, "~> 0.39", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
