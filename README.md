@@ -10,7 +10,10 @@
 
 Elixir implementation of [Zarr](https://zarr.dev): compressed, chunked, N-dimensional arrays designed for parallel computing and scientific data storage.
 
-**Full Zarr v3 Support:** ExZarr implements both Zarr v2 and v3 specifications with production-ready support for v3's unified codec pipeline, improved metadata format, and modern features. Automatic version detection ensures seamless interoperability. See [ZARR_V3_STATUS.md](ZARR_V3_STATUS.md) for complete v3 support details.
+**Zarr v3.1 core support:** ExZarr implements Zarr v2 and Zarr core v3.1 for the
+documented dtype/codec subset, with automatic version detection and Python
+interop tested against zarr-python 2.x / 3.2 / 3.3 / 3.4. See
+[ZARR_V3_STATUS.md](ZARR_V3_STATUS.md) for details and known limitations.
 
 ## Features
 
@@ -36,7 +39,7 @@ Add `ex_zarr` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.1"}
+    {:ex_zarr, "~> 1.2"}
   ]
 end
 ```
@@ -529,7 +532,7 @@ ExZarr includes several pre-built storage backends for cloud services and databa
 
 ```elixir
 # Add dependency
-{:azurex, "~> 0.3"}
+{:azure_sdk, "~> 0.4.1"}
 
 # Register and use
 :ok = ExZarr.Storage.Registry.register(ExZarr.Storage.Backend.AzureBlob)
@@ -868,18 +871,17 @@ Key modules:
 
 See [ROADMAP.md](ROADMAP.md) for the full release plan.
 
-**v1.1.0 (current)** - BEAM-native streaming: `stream_chunks/2`, `stream_slices/3`,
-`write_stream/3`, telemetry, Flow/GenStage/Broadway integrations, cloud patterns
-guide, and production cookbook.
+**v1.2.0 (current)** - Zarr 3.1 interoperability & range-aware cloud I/O:
+spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
+AzureSDK migration, Python fixture/CI matrix.
 
 **Upcoming** (high level):
 
-- **v1.2.0**  - **Cloud storage & reliability**
-  Unified retry/backoff for S3/GCS/Azure, Azure SDK migration, v3 async store read alignment, cloud integration tests.
 - **v1.3.0** - **Data science interop**
   Explorer streaming, Nx batch recipes from `stream_chunks`, livebook curriculum, cookbook expansion.
 - **v1.4.0** - **Performance & packaging**
-  Async codec pipeline (overlap I/O + decode), vendored/static codecs (drop apt/brew deps), PackBits/Categorize filters, sharding improvements.
+  Async codec pipeline (overlap I/O + decode), vendored/static codecs, adaptive range coalescing,
+  storage-transformer execution.
 - **v2.0.0** - **Distributed processing**
   Horde/`:pg` multi-node chunk work, `PartitionSupervisor` pools, cross-node telemetry, distributed Broadway topologies.
 

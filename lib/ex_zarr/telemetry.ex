@@ -18,6 +18,7 @@ defmodule ExZarr.Telemetry do
   | `[:ex_zarr, :chunk, :write, :stop]` | `%{duration: native_time, bytes: integer}` | `%{array: ref, chunk_index: tuple}` |
   | `[:ex_zarr, :stream, :start]` | `%{}` | `%{array: ref, type: atom, opts: keyword}` |
   | `[:ex_zarr, :stream, :stop]` | `%{duration: native_time, count: integer}` | `%{array: ref, type: atom}` |
+  | `[:ex_zarr, :shard, :range_read]` | `%{bytes_requested, bytes_fetched, range_count}` | `%{fallback: boolean}` |
 
   ## Examples
 
@@ -39,6 +40,7 @@ defmodule ExZarr.Telemetry do
   @chunk_write [:ex_zarr, :chunk, :write]
   @stream_start [:ex_zarr, :stream, :start]
   @stream_stop [:ex_zarr, :stream, :stop]
+  @shard_range_read [:ex_zarr, :shard, :range_read]
 
   @doc false
   @spec chunk_read(tuple(), tuple(), (-> term())) :: term()
@@ -82,6 +84,25 @@ defmodule ExZarr.Telemetry do
     :ok
   end
 
+  @doc false
+  @spec shard_range_read(non_neg_integer(), non_neg_integer(), non_neg_integer(), boolean()) ::
+          :ok
+  def shard_range_read(bytes_requested, bytes_fetched, range_count, fallback)
+      when is_integer(bytes_requested) and is_integer(bytes_fetched) and is_integer(range_count) and
+             is_boolean(fallback) do
+    :telemetry.execute(
+      @shard_range_read,
+      %{
+        bytes_requested: bytes_requested,
+        bytes_fetched: bytes_fetched,
+        range_count: range_count
+      },
+      %{fallback: fallback}
+    )
+
+    :ok
+  end
+
   @doc """
   Returns telemetry event names for attaching handlers.
 
@@ -98,7 +119,8 @@ defmodule ExZarr.Telemetry do
       @chunk_write ++ [:stop],
       @chunk_write ++ [:exception],
       @stream_start,
-      @stream_stop
+      @stream_stop,
+      @shard_range_read
     ]
   end
 end

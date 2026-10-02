@@ -211,6 +211,70 @@ defmodule ExZarr.Storage do
   end
 
   @doc """
+  Reads a byte range from a chunk/shard object.
+
+  Uses native range support when the backend advertises `:range_read`,
+  otherwise falls back to a full read plus binary slicing.
+  """
+  @spec read_chunk_range(t(), tuple(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, binary()} | {:error, term()}
+  def read_chunk_range(
+        %__MODULE__{backend: backend_id, state: backend_state},
+        chunk_index,
+        offset,
+        length
+      ) do
+    case ExZarr.Storage.Registry.get(backend_id) do
+      {:ok, backend_module} ->
+        ExZarr.Storage.Backend.read_range(
+          backend_module,
+          backend_state,
+          chunk_index,
+          offset,
+          length
+        )
+
+      {:error, :not_found} ->
+        {:error, {:unknown_backend, backend_id}}
+    end
+  end
+
+  @doc """
+  Returns chunk/shard object info when the backend supports it.
+  """
+  @spec chunk_info(t(), tuple()) :: {:ok, map()} | {:error, term()}
+  def chunk_info(%__MODULE__{backend: backend_id, state: backend_state}, chunk_index) do
+    case ExZarr.Storage.Registry.get(backend_id) do
+      {:ok, backend_module} ->
+        if function_exported?(backend_module, :chunk_info, 2) do
+          backend_module.chunk_info(backend_state, chunk_index)
+        else
+          case backend_module.read_chunk(backend_state, chunk_index) do
+            {:ok, data} -> {:ok, %{size: byte_size(data)}}
+            error -> error
+          end
+        end
+
+      {:error, :not_found} ->
+        {:error, {:unknown_backend, backend_id}}
+    end
+  end
+
+  @doc """
+  Returns whether the storage backend supports a capability.
+  """
+  @spec supports?(t(), atom()) :: boolean()
+  def supports?(%__MODULE__{backend: backend_id, state: backend_state}, capability) do
+    case ExZarr.Storage.Registry.get(backend_id) do
+      {:ok, backend_module} ->
+        ExZarr.Storage.Backend.supports?(backend_module, backend_state, capability)
+
+      {:error, :not_found} ->
+        false
+    end
+  end
+
+  @doc """
   Writes a chunk to storage.
 
   Stores compressed chunk data in the storage backend. For filesystem storage,

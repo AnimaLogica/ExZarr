@@ -184,9 +184,9 @@ defmodule ExZarr.ArrayManipulationTest do
       result = Array.resize(array, {-10, 10})
       assert {:error, _} = result
 
-      # Zero dimension
-      result = Array.resize(array, {0, 10})
-      assert {:error, _} = result
+      # Zero-length dimensions are valid (Zarr 3.1)
+      assert {:ok, resized} = Array.resize(array, {0, 10})
+      assert resized.shape == {0, 10}
     end
   end
 

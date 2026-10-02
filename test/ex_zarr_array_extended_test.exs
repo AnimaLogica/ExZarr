@@ -145,9 +145,13 @@ defmodule ExZarr.ArrayExtendedTest do
   describe "Array validation" do
     test "rejects invalid shape" do
       assert {:error, :shape_required} = ExZarr.create(chunks: {10, 10})
-      assert {:error, :invalid_shape} = ExZarr.create(shape: {}, chunks: {10})
+      # Scalar shape is valid; mismatched chunk rank is not
+      assert {:error, :invalid_chunks} = ExZarr.create(shape: {}, chunks: {10})
       assert {:error, :invalid_shape} = ExZarr.create(shape: {-1, 10}, chunks: {10, 10})
-      assert {:error, :invalid_shape} = ExZarr.create(shape: {0, 10}, chunks: {10, 10})
+
+      # Zero-length dims are valid (Zarr 3.1)
+      assert {:ok, array} = ExZarr.create(shape: {0, 10}, chunks: {10, 10}, storage: :memory)
+      assert array.shape == {0, 10}
     end
 
     test "rejects invalid chunks" do

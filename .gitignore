@@ -27,3 +27,6 @@ erl_crash.dump
 /humidity/
 /child/child/
 /data/
+/baoulo/
+.DS_Store
+SESSION_STATE.md

@@ -153,8 +153,13 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
       end
     end
 
-    test "returns error for non-existent chunk", %{codec: codec, shard: shard} do
-      assert {:error, {:chunk_not_found, {9, 9}}} =
+    test "returns error for missing (sentinel) chunk slot", %{codec: codec} do
+      {:ok, shard} = ShardingIndexed.encode(%{{0, 0} => <<1, 2, 3, 4>>}, codec)
+
+      assert {:error, {:chunk_not_found, {1, 1}}} =
+               ShardingIndexed.decode_chunk(shard, {1, 1}, codec)
+
+      assert {:error, {:invalid_chunk_index, {9, 9}}} =
                ShardingIndexed.decode_chunk(shard, {9, 9}, codec)
     end
   end

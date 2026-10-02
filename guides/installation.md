@@ -85,7 +85,7 @@ end
 def deps do
   [
     {:ex_zarr, "~> 1.0"},
-    {:azurex, "~> 1.1"}
+    {:azure_sdk, "~> 0.4.1"}
   ]
 end
 ```

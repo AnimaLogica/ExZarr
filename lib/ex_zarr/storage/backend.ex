@@ -326,6 +326,83 @@ defmodule ExZarr.Storage.Backend do
   """
   @callback exists?(config()) :: boolean()
 
+  @type chunk_info :: %{required(:size) => non_neg_integer(), optional(:etag) => term()}
+
+  @doc """
+  Optional: returns object size (and optional etag) for a stored chunk/shard.
+  """
+  @callback chunk_info(state(), chunk_index()) :: {:ok, chunk_info()} | {:error, term()}
+
+  @doc """
+  Optional: reads `length` bytes starting at `offset` from a chunk/shard object.
+  """
+  @callback read_chunk_range(
+              state(),
+              chunk_index(),
+              non_neg_integer(),
+              non_neg_integer()
+            ) :: {:ok, binary()} | {:error, term()}
+
+  @doc """
+  Optional: returns backend capabilities such as `:range_read`.
+  """
+  @callback capabilities(state()) :: MapSet.t() | [atom()]
+
+  @optional_callbacks [
+    chunk_info: 2,
+    read_chunk_range: 4,
+    capabilities: 1
+  ]
+
+  @doc """
+  Returns whether `backend` advertises `capability` for `state`.
+  """
+  @spec supports?(module(), state(), atom()) :: boolean()
+  def supports?(backend, state, capability) when is_atom(backend) and is_atom(capability) do
+    cond do
+      function_exported?(backend, :capabilities, 1) ->
+        caps = backend.capabilities(state)
+
+        cond do
+          is_struct(caps, MapSet) -> MapSet.member?(caps, capability)
+          is_list(caps) -> capability in caps
+          true -> false
+        end
+
+      capability == :range_read and function_exported?(backend, :read_chunk_range, 4) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  @doc """
+  Reads a byte range, falling back to full `read_chunk/2` + binary slice.
+  """
+  @spec read_range(module(), state(), chunk_index(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, binary()} | {:error, term()}
+  def read_range(backend, state, chunk_index, offset, length)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
+    if supports?(backend, state, :range_read) and
+         function_exported?(backend, :read_chunk_range, 4) do
+      backend.read_chunk_range(state, chunk_index, offset, length)
+    else
+      case backend.read_chunk(state, chunk_index) do
+        {:ok, data} ->
+          if offset + length > byte_size(data) do
+            {:error,
+             {:invalid_chunk_range, %{offset: offset, length: length, size: byte_size(data)}}}
+          else
+            {:ok, binary_part(data, offset, length)}
+          end
+
+        error ->
+          error
+      end
+    end
+  end
+
   @doc """
   Helper function to check if a module implements the Backend behavior.
   """

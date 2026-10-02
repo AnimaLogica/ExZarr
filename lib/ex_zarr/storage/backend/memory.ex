@@ -112,4 +112,35 @@ defmodule ExZarr.Storage.Backend.Memory do
     # Memory storage never "exists" on disk
     false
   end
+
+  @doc false
+  @impl true
+  def chunk_info(state, chunk_index) do
+    case read_chunk(state, chunk_index) do
+      {:ok, data} -> {:ok, %{size: byte_size(data)}}
+      error -> error
+    end
+  end
+
+  @doc false
+  @impl true
+  def read_chunk_range(state, chunk_index, offset, length)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
+    case read_chunk(state, chunk_index) do
+      {:ok, data} ->
+        if offset + length > byte_size(data) do
+          {:error,
+           {:invalid_chunk_range, %{offset: offset, length: length, size: byte_size(data)}}}
+        else
+          {:ok, binary_part(data, offset, length)}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @doc false
+  @impl true
+  def capabilities(_state), do: MapSet.new([:range_read])
 end

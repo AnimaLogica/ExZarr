@@ -76,7 +76,7 @@ defp deps do
     {:req, "~> 0.5"},
 
     # For Azure Blob Storage tests
-    {:azurex, "~> 0.3"},
+    {:azure_sdk, "~> 0.4.1"},
     {:httpoison, "~> 2.2"},
 
     # For MongoDB GridFS tests

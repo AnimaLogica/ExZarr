@@ -2,243 +2,278 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
   @moduledoc """
   Azure Blob Storage backend for Zarr arrays.
 
-  Stores chunks and metadata in Microsoft Azure Blob Storage, providing
-  enterprise-grade cloud storage with global availability.
+  Uses optional `azure_sdk` (`~> 0.4.1`). Arrays may be stored with Zarr v2 or
+  v3 object naming depending on `:zarr_format` in the backend config/state.
 
   ## Configuration
 
-  Requires the following options:
-  - `:account_name` - Azure storage account name (required)
-  - `:account_key` - Azure storage account key (required)
+  Shared Key convenience options:
+
+  - `:account_name` - Azure storage account name (required unless `:azure_client` given)
+  - `:account_key` - Azure storage account key (required unless `:azure_client` given)
   - `:container` - Blob container name (required)
-  - `:prefix` - Blob prefix/path within container (optional, default: "")
+  - `:prefix` - Blob prefix within the container (optional, default `""`)
+  - `:zarr_format` - `2` or `3` (optional, default `2`)
+
+  Advanced path — inject a prebuilt client (Shared Key, SAS, Entra, Azurite, etc.):
+
+      azure_client: %AzureSDK.Storage.Client{}
 
   ## Dependencies
 
-  Requires the `azurex` package:
+      {:azure_sdk, "~> 0.4.1", optional: true}
 
-  ```elixir
-  {:azurex, "~> 0.3"}
-  ```
+  ## Blob structure
 
-  ## Example
+  Zarr v2:
 
-  ```elixir
-  # Register the Azure Blob backend
-  :ok = ExZarr.Storage.Registry.register(ExZarr.Storage.Backend.AzureBlob)
+      container/prefix/.zarray
+      container/prefix/0.0
 
-  # Create array with Azure Blob storage
-  {:ok, array} = ExZarr.create(
-    shape: {1000, 1000},
-    chunks: {100, 100},
-    dtype: :float64,
-    storage: :azure_blob,
-    account_name: "mystorageaccount",
-    account_key: System.get_env("AZURE_STORAGE_KEY"),
-    container: "zarr-data",
-    prefix: "experiments/array1"
-  )
+  Zarr v3:
 
-  # Write and read data
-  ExZarr.Array.set_slice(array, data, start: {0, 0}, stop: {100, 100})
-  {:ok, result} = ExZarr.Array.get_slice(array, start: {0, 0}, stop: {100, 100})
-  ```
-
-  ## Blob Structure
-
-  Arrays are stored with the following blob paths:
-  ```
-  container/prefix/.zarray           # Metadata
-  container/prefix/0.0               # Chunk at index (0, 0)
-  container/prefix/0.1               # Chunk at index (0, 1)
-  ```
-
-  ## Performance Considerations
-
-  - Use blob block size appropriate for chunk sizes
-  - Consider using Azure CDN for read-heavy workloads
-  - Configure appropriate access tiers (Hot/Cool/Archive)
-  - Use SAS tokens for delegated access
-
-  ## Error Handling
-
-  Azure Blob errors are returned as `{:error, reason}` tuples.
-  Common errors:
-  - `:container_not_found` - Container doesn't exist
-  - `:access_denied` - Insufficient permissions
-  - `:network_error` - Network connectivity issues
+      container/prefix/zarr.json
+      container/prefix/c/0/0
   """
 
   @behaviour ExZarr.Storage.Backend
+
+  alias ExZarr.Storage.ObjectKeys
 
   @impl true
   def backend_id, do: :azure_blob
 
   @impl true
   def init(config) do
-    with {:ok, account_name} <- fetch_required(config, :account_name),
-         {:ok, account_key} <- fetch_required(config, :account_key),
-         {:ok, container} <- fetch_required(config, :container) do
-      prefix = Keyword.get(config, :prefix, "")
-
-      state = %{
-        account_name: account_name,
-        account_key: account_key,
-        container: container,
-        prefix: prefix
-      }
-
-      {:ok, state}
+    with {:ok, container} <- fetch_required(config, :container),
+         {:ok, zarr_format} <- fetch_zarr_format(config),
+         {:ok, client} <- build_or_fetch_client(config) do
+      {:ok,
+       %{
+         client: client,
+         container: container,
+         prefix: Keyword.get(config, :prefix, ""),
+         zarr_format: zarr_format,
+         account_name: Keyword.get(config, :account_name),
+         account_key: Keyword.get(config, :account_key)
+       }}
     end
   end
 
   @impl true
-  def open(config) do
-    # Same as init for blob storage
-    init(config)
-  end
+  def open(config), do: init(config)
 
   @impl true
   def read_chunk(state, chunk_index) do
-    blob_name = build_blob_name(state.prefix, chunk_index)
+    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
 
-    case azurex_blob().get_blob(
-           state.account_name,
-           state.account_key,
-           state.container,
-           blob_name
-         ) do
-      {:ok, blob_data} ->
-        {:ok, blob_data}
+    case blob_api().download(state.client, state.container, blob_name) do
+      {:ok, %{content: content}} when is_binary(content) ->
+        {:ok, content}
 
-      {:error, %{status_code: 404}} ->
-        {:error, :not_found}
-
-      {:error, reason} ->
-        {:error, {:azure_error, reason}}
+      {:error, error} ->
+        normalize_error(error)
     end
   end
 
   @impl true
   def write_chunk(state, chunk_index, data) do
-    blob_name = build_blob_name(state.prefix, chunk_index)
+    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
 
-    case azurex_blob().put_block_blob(
-           state.account_name,
-           state.account_key,
-           state.container,
-           blob_name,
-           data
-         ) do
-      {:ok, _} ->
-        :ok
-
-      {:error, reason} ->
-        {:error, {:azure_error, reason}}
+    case blob_api().upload(state.client, state.container, blob_name, data) do
+      {:ok, _} -> :ok
+      {:error, error} -> normalize_error(error)
     end
   end
 
   @impl true
   def read_metadata(state) do
-    blob_name = build_metadata_name(state.prefix)
+    blob_name = ObjectKeys.metadata_key(state.prefix, state.zarr_format)
 
-    case azurex_blob().get_blob(
-           state.account_name,
-           state.account_key,
-           state.container,
-           blob_name
-         ) do
-      {:ok, blob_data} ->
-        {:ok, blob_data}
+    case blob_api().download(state.client, state.container, blob_name) do
+      {:ok, %{content: content}} when is_binary(content) ->
+        {:ok, content}
 
-      {:error, %{status_code: 404}} ->
-        {:error, :not_found}
+      {:error, error} ->
+        # Prefer v3 then v2 when opening without an explicit format
+        if state.zarr_format == 2 do
+          normalize_error(error)
+        else
+          fallback = ObjectKeys.metadata_key(state.prefix, 2)
 
-      {:error, reason} ->
-        {:error, {:azure_error, reason}}
+          case blob_api().download(state.client, state.container, fallback) do
+            {:ok, %{content: content}} when is_binary(content) -> {:ok, content}
+            {:error, _} -> normalize_error(error)
+          end
+        end
     end
   end
 
   @impl true
   def write_metadata(state, metadata, _opts) when is_binary(metadata) do
-    blob_name = build_metadata_name(state.prefix)
+    version =
+      case Jason.decode(metadata) do
+        {:ok, %{"zarr_format" => 3}} -> 3
+        {:ok, %{zarr_format: 3}} -> 3
+        _ -> state.zarr_format
+      end
 
-    case azurex_blob().put_block_blob(
-           state.account_name,
-           state.account_key,
-           state.container,
-           blob_name,
-           metadata
-         ) do
-      {:ok, _} ->
-        :ok
+    blob_name = ObjectKeys.metadata_key(state.prefix, version)
 
-      {:error, reason} ->
-        {:error, {:azure_error, reason}}
+    case blob_api().upload(state.client, state.container, blob_name, metadata) do
+      {:ok, _} -> :ok
+      {:error, error} -> normalize_error(error)
     end
   end
 
   @impl true
   def list_chunks(state) do
-    prefix = if state.prefix == "", do: "", else: "#{state.prefix}/"
+    prefix = ObjectKeys.list_prefix(state.prefix)
 
-    case azurex_blob().list_blobs(
-           state.account_name,
-           state.account_key,
-           state.container,
-           prefix: prefix
-         ) do
+    case container_api().list_blobs(state.client, state.container, prefix: prefix) do
       {:ok, blobs} ->
         chunks =
           blobs
-          |> Enum.map(& &1.name)
-          |> Enum.filter(&chunk_name?/1)
-          |> Enum.map(&parse_blob_name(&1, state.prefix))
+          |> Enum.map(&blob_name/1)
+          |> Enum.filter(&ObjectKeys.chunk_key?(&1, state.zarr_format))
+          |> Enum.map(&ObjectKeys.parse_chunk_key(&1, state.prefix, state.zarr_format))
           |> Enum.reject(&is_nil/1)
 
         {:ok, chunks}
 
-      {:error, reason} ->
-        {:error, {:azure_error, reason}}
+      {:error, error} ->
+        normalize_error(error)
     end
   end
 
   @impl true
   def delete_chunk(state, chunk_index) do
-    blob_name = build_blob_name(state.prefix, chunk_index)
+    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
 
-    case azurex_blob().delete_blob(
-           state.account_name,
-           state.account_key,
-           state.container,
-           blob_name
-         ) do
+    case blob_api().delete(state.client, state.container, blob_name) do
       {:ok, _} ->
         :ok
 
-      {:error, %{status_code: 404}} ->
-        :ok
-
-      {:error, reason} ->
-        {:error, {:azure_error, reason}}
+      {:error, error} ->
+        case normalize_error(error) do
+          {:error, :not_found} -> :ok
+          other -> other
+        end
     end
   end
 
   @impl true
   def exists?(config) do
-    with {:ok, account_name} <- fetch_required(config, :account_name),
-         {:ok, account_key} <- fetch_required(config, :account_key),
-         {:ok, container} <- fetch_required(config, :container) do
-      case azurex_blob().get_container_properties(account_name, account_key, container) do
-        {:ok, _} -> true
-        _ -> false
-      end
-    else
-      _ -> false
+    case init(config) do
+      {:ok, state} ->
+        case container_api().exists?(state.client, state.container) do
+          true -> true
+          false -> false
+          {:error, _} -> false
+        end
+
+      {:error, _} ->
+        false
     end
   end
 
-  ## Private Helpers
+  @doc false
+  @impl true
+  @spec chunk_info(map(), tuple()) :: {:ok, map()} | {:error, term()}
+  def chunk_info(state, chunk_index) do
+    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+
+    case blob_api().properties(state.client, state.container, blob_name) do
+      {:ok, props} ->
+        {:ok, %{size: Map.get(props, :content_length, 0), etag: Map.get(props, :etag)}}
+
+      {:error, error} ->
+        normalize_error(error)
+    end
+  end
+
+  @doc false
+  @impl true
+  @spec read_chunk_range(map(), tuple(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, binary()} | {:error, term()}
+  def read_chunk_range(state, chunk_index, offset, length)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
+    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+
+    opts =
+      if length == 0 do
+        []
+      else
+        [range: {offset, offset + length - 1}]
+      end
+
+    opts =
+      case Keyword.get_values(opts, :range) do
+        [] ->
+          opts
+
+        _ ->
+          case chunk_info(state, chunk_index) do
+            {:ok, %{etag: etag}} when is_binary(etag) -> Keyword.put(opts, :if_match, etag)
+            _ -> opts
+          end
+      end
+
+    if length == 0 do
+      {:ok, ""}
+    else
+      case blob_api().download(state.client, state.container, blob_name, opts) do
+        {:ok, %{content: content}} when is_binary(content) -> {:ok, content}
+        {:error, error} -> normalize_error(error)
+      end
+    end
+  end
+
+  @doc false
+  @impl true
+  def capabilities(_state), do: MapSet.new([:range_read])
+
+  ## Private
+
+  defp build_or_fetch_client(config) do
+    case Keyword.fetch(config, :azure_client) do
+      {:ok, client} when not is_nil(client) ->
+        {:ok, client}
+
+      _ ->
+        with {:ok, account_name} <- fetch_required(config, :account_name),
+             {:ok, account_key} <- fetch_required(config, :account_key),
+             :ok <- ensure_azure_sdk() do
+          credential = identity_api().new(account_name, account_key)
+
+          client_opts =
+            [account: account_name, credential: credential]
+            |> maybe_put(:endpoint, Keyword.get(config, :endpoint))
+
+          {:ok, storage_client_api().new(client_opts)}
+        end
+    end
+  end
+
+  defp ensure_azure_sdk do
+    if Code.ensure_loaded?(AzureSDK.Storage.Client) do
+      :ok
+    else
+      {:error,
+       {:missing_dependency,
+        "Azure Blob backend requires {:azure_sdk, \"~> 0.4.1\"} as an optional dependency"}}
+    end
+  end
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp fetch_zarr_format(config) do
+    case Keyword.get(config, :zarr_format, 2) do
+      version when version in [2, 3] -> {:ok, version}
+      other -> {:error, {:invalid_zarr_format, other}}
+    end
+  end
 
   defp fetch_required(config, key) do
     case Keyword.fetch(config, key) do
@@ -256,54 +291,43 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
     end
   end
 
-  defp build_blob_name("", chunk_index) do
-    chunk_index
-    |> Tuple.to_list()
-    |> Enum.join(".")
+  defp blob_name(%{name: name}) when is_binary(name), do: name
+  defp blob_name(%{"name" => name}) when is_binary(name), do: name
+  defp blob_name(name) when is_binary(name), do: name
+  defp blob_name(_), do: ""
+
+  defp normalize_error(%{status: 404}), do: {:error, :not_found}
+  defp normalize_error(%{status_code: 404}), do: {:error, :not_found}
+
+  defp normalize_error(error) when is_map(error) do
+    status = Map.get(error, :status) || Map.get(error, :status_code)
+
+    if status == 404 do
+      {:error, :not_found}
+    else
+      {:error, {:azure_error, error}}
+    end
   end
 
-  defp build_blob_name(prefix, chunk_index) do
-    chunk_name =
-      chunk_index
-      |> Tuple.to_list()
-      |> Enum.join(".")
+  defp normalize_error(error), do: {:error, {:azure_error, error}}
 
-    "#{prefix}/#{chunk_name}"
+  defp blob_api do
+    Application.get_env(:ex_zarr, :azure_blob_module, AzureSDK.Storage.Blob)
   end
 
-  defp build_metadata_name(""), do: ".zarray"
-  defp build_metadata_name(prefix), do: "#{prefix}/.zarray"
-
-  defp chunk_name?(name) do
-    basename = Path.basename(name)
-    String.match?(basename, ~r/^\d+(\.\d+)*$/)
+  defp container_api do
+    Application.get_env(:ex_zarr, :azure_container_module, AzureSDK.Storage.Container)
   end
 
-  defp parse_blob_name(name, "") do
-    name
-    |> String.split(".")
-    |> Enum.map(&String.to_integer/1)
-    |> List.to_tuple()
-  rescue
-    _ -> nil
+  defp identity_api do
+    Application.get_env(
+      :ex_zarr,
+      :azure_identity_module,
+      AzureSDK.Identity.SharedKeyCredential
+    )
   end
 
-  defp parse_blob_name(name, prefix) do
-    relative_name =
-      name
-      |> String.trim_leading(prefix)
-      |> String.trim_leading("/")
-
-    relative_name
-    |> String.split(".")
-    |> Enum.map(&String.to_integer/1)
-    |> List.to_tuple()
-  rescue
-    _ -> nil
-  end
-
-  # Allow injection for testing
-  defp azurex_blob do
-    Application.get_env(:ex_zarr, :azurex_blob_module, Azurex.Blob.Client)
+  defp storage_client_api do
+    Application.get_env(:ex_zarr, :azure_storage_client_module, AzureSDK.Storage.Client)
   end
 end

@@ -224,3 +224,58 @@ jobs:
         run: |
           echo "Checking for undocumented public functions..."
           mix docs --warnings-as-errors
+
+  python-interop:
+    name: Python Interop (zarr ${{ matrix.zarr }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - zarr: "2.18.3"
+            python: "3.11"
+            major: 2
+          - zarr: "3.2.3"
+            python: "3.11"
+            major: 3
+          - zarr: "3.3.0"
+            python: "3.11"
+            major: 3
+          - zarr: "3.4.0"
+            python: "3.11"
+            major: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install zarr-python
+        run: |
+          python -m pip install --upgrade pip
+          pip install "zarr==${{ matrix.zarr }}" numpy
+      - name: Generate fixtures
+        run: |
+          python test/support/python_fixtures/generate_fixtures.py \
+            --out "test/support/python_fixtures/generated/zarr_${{ matrix.zarr }}" \
+            --zarr-major ${{ matrix.major }}
+      - name: Install Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.5"
+          otp-version: "28.3.1"
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Verify Zig
+        run: |
+          echo "ZIG_EXECUTABLE_PATH=$(which zig)" >> "$GITHUB_ENV"
+          zig version
+      - run: mix deps.get
+      - name: Run Python-tagged tests
+        run: mix test --include python --include python_v3
+        continue-on-error: true

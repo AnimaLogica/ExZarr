@@ -2,23 +2,33 @@
 
 ## TL;DR
 
-**ExZarr provides full, production-ready support for Zarr v3.**
-
-Both Zarr v2 and v3 are first-class citizens in ExZarr with complete implementations and automatic version detection.
+ExZarr implements Zarr v2 and **Zarr core v3.1** for the documented core
+dtype/codec subset. Interoperability is tested against zarr-python **2.x** and
+**3.2 / 3.3 / 3.4** via the Python fixture/CI matrix (see
+`test/support/python_fixtures/`).
 
 ## Production Status
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **Zarr v3 Core Specification** | Production-ready | Full implementation |
-| **Unified Codec Pipeline** | Production-ready | Complete support |
-| **v3 Metadata Format** | Production-ready | `zarr.json` with embedded attributes |
-| **Hierarchical Chunk Storage** | Production-ready | `c/` directory with slash-separated keys |
-| **Automatic Version Detection** | Production-ready | Transparent v2/v3 interoperability |
-| **Python Interoperability** | Production-ready | Compatible with zarr-python 3.x |
-| **Dimension Names** | Production-ready | Full support |
-| **Custom Chunk Grids** | Production-ready | Regular and irregular grids |
-| **Sharding Extension** | Supported | Optional v3 extension |
+| **Zarr v3.1 core metadata** | Supported | Scalars, zero-length dims, dim names, extensions |
+| **Unified Codec Pipeline** | Supported | Core codecs + Zig NIF compressors |
+| **v3 Metadata Format** | Supported | `zarr.json` |
+| **Chunk key encoding** | Supported | Default `c/` hierarchy |
+| **Automatic Version Detection** | Supported | Filesystem and cloud backends |
+| **Python Interoperability** | Tested subset | Matrix for 2.x / 3.2 / 3.3 / 3.4 |
+| **Dimension Names** | Spec-aligned | Arbitrary JSON strings / null |
+| **sharding_indexed v1.0** | Supported | Dense index + sentinel; range-aware reads |
+| **storage_transformers** | Metadata only | Parsed/preserved; execution deferred |
+| **Cloud range reads** | Supported | Optional backend capability |
+
+## Known unsupported / deferred
+
+- Storage-transformer runtime execution
+- Adaptive multi-range coalescing
+- Partial writes inside cloud shards
+- Extension dtypes/codecs beyond the documented core set
+- Explorer integration (planned v1.3)
 
 ## What This Means
 

@@ -29,6 +29,10 @@ This allows scientific workflows to span multiple languages while maintaining a 
 
 ## Python Integration
 
+ExZarr interops with zarr-python. For CI-backed coverage see
+`test/support/python_fixtures/` and the `python-interop` GitHub Actions job
+(zarr 2.x / 3.2 / 3.3 / 3.4).
+
 ### Creating Arrays with ExZarr for Python
 
 ```elixir

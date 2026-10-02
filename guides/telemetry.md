@@ -13,9 +13,11 @@ duration measurements. Stream start/stop use `:telemetry.execute/3`.
 | `[:ex_zarr, :chunk, :write, :stop]` | `%{duration: native_time, bytes: integer}` | `%{array: ref, chunk_index: tuple}` |
 | `[:ex_zarr, :stream, :start]` | `%{}` | `%{array: ref, type: atom, opts: keyword}` |
 | `[:ex_zarr, :stream, :stop]` | `%{duration: native_time, count: integer}` | `%{array: ref, type: atom}` |
+| `[:ex_zarr, :shard, :range_read]` | `%{bytes_requested, bytes_fetched, range_count}` | `%{fallback: boolean}` |
 
 `ExZarr.Telemetry.events/0` returns all attachable event names, including
-`:start` and `:exception` variants for chunk spans.
+`:start` and `:exception` variants for chunk spans. Range-read telemetry uses
+low-cardinality metadata only.
 
 ## Installation
 

@@ -179,10 +179,13 @@ config :goth,
 **Azure Security:**
 
 ```elixir
-# Use managed identity or SAS tokens
-config :azurex,
-  account_name: {:system, "AZURE_STORAGE_ACCOUNT"},
-  account_key: {:system, "AZURE_STORAGE_KEY"}
+# Prefer env-based Shared Key or a prebuilt AzureSDK.Storage.Client
+ExZarr.open(
+  storage: :azure_blob,
+  account_name: System.fetch_env!("AZURE_STORAGE_ACCOUNT"),
+  account_key: System.fetch_env!("AZURE_STORAGE_KEY"),
+  container: "zarr-data"
+)
 
 # Enable Azure Storage encryption at rest
 # Use RBAC for fine-grained access control

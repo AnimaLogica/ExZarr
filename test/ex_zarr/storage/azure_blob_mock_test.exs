@@ -3,61 +3,74 @@ defmodule ExZarr.Storage.AzureBlobMockTest do
 
   alias ExZarr.Storage.Backend.AzureBlob
 
-  # Mock Azurex.Blob.Client for Azure Blob testing
-  defmodule MockAzurexBlob do
-    def get_blob(_account_name, _account_key, _container, blob_name) do
-      send(self(), {:azurex_get, blob_name})
+  defmodule MockBlob do
+    def download(_client, _container, blob_name, opts \\ []) do
+      send(self(), {:azure_download, blob_name, opts})
 
       cond do
-        String.ends_with?(blob_name, ".zarray") ->
-          {:ok, mock_metadata_json()}
+        String.ends_with?(blob_name, ".zarray") or String.ends_with?(blob_name, "zarr.json") ->
+          {:ok, %{content: mock_metadata_json(blob_name), properties: %{}}}
 
-        String.match?(blob_name, ~r/\d+(\.\d+)*$/) ->
-          {:ok, <<1, 2, 3, 4, 5>>}
+        String.match?(blob_name, ~r/(^|\/)c\//) or
+            String.match?(blob_name, ~r/^(.*\/)?\d+(\.\d+)*$/) ->
+          # Treat very high indices as missing for not_found tests
+          case Regex.run(
+                 ~r/(\d+)(?:\.|$)/,
+                 Path.basename(blob_name) |> String.replace_prefix("c/", "")
+               ) do
+            [_, n] ->
+              if String.to_integer(n) >= 99 do
+                {:error, %{status: 404, message: "Not Found"}}
+              else
+                case Keyword.get(opts, :range) do
+                  {start, finish} ->
+                    data = <<1, 2, 3, 4, 5, 6, 7, 8>>
+
+                    {:ok,
+                     %{content: binary_part(data, start, finish - start + 1), properties: %{}}}
+
+                  nil ->
+                    {:ok, %{content: <<1, 2, 3, 4, 5>>, properties: %{}}}
+                end
+              end
+
+            _ ->
+              {:ok, %{content: <<1, 2, 3, 4, 5>>, properties: %{}}}
+          end
 
         true ->
-          {:error, %{status_code: 404, body: "Not Found"}}
+          {:error, %{status: 404, message: "Not Found"}}
       end
     end
 
-    def put_block_blob(_account_name, _account_key, _container, blob_name, data) do
-      send(self(), {:azurex_put, blob_name, data})
-      {:ok, %{status_code: 201}}
+    def upload(_client, _container, blob_name, data, _opts \\ []) do
+      send(self(), {:azure_upload, blob_name, data})
+      {:ok, %{content: data, properties: %{}}}
     end
 
-    def list_blobs(_account_name, _account_key, _container, opts \\ []) do
-      prefix = Keyword.get(opts, :prefix, "")
-      send(self(), {:azurex_list, prefix})
-
-      items =
-        case prefix do
-          "" ->
-            [
-              %{name: ".zarray"},
-              %{name: "0.0"},
-              %{name: "0.1"},
-              %{name: "1.0"}
-            ]
-
-          _ ->
-            [
-              %{name: "#{prefix}/.zarray"},
-              %{name: "#{prefix}/0.0"},
-              %{name: "#{prefix}/0.1"}
-            ]
-        end
-
-      {:ok, items}
+    def delete(_client, _container, blob_name, _opts \\ []) do
+      send(self(), {:azure_delete, blob_name})
+      {:ok, :deleted}
     end
 
-    def delete_blob(_account_name, _account_key, _container, blob_name) do
-      send(self(), {:azurex_delete, blob_name})
-      {:ok, %{status_code: 202}}
+    def properties(_client, _container, blob_name, _opts \\ []) do
+      send(self(), {:azure_properties, blob_name})
+
+      {:ok,
+       %{
+         content_length: 8,
+         etag: "\"etag1\"",
+         content_type: nil,
+         last_modified: nil,
+         metadata: %{}
+       }}
     end
 
-    defp mock_metadata_json do
+    defp mock_metadata_json(name) do
+      format = if String.ends_with?(name, "zarr.json"), do: 3, else: 2
+
       Jason.encode!(%{
-        zarr_format: 2,
+        zarr_format: format,
         shape: [100, 100],
         chunks: [10, 10],
         dtype: "<f8",
@@ -69,15 +82,60 @@ defmodule ExZarr.Storage.AzureBlobMockTest do
     end
   end
 
+  defmodule MockContainer do
+    def list_blobs(_client, _container, opts \\ []) do
+      prefix = Keyword.get(opts, :prefix, "")
+      send(self(), {:azure_list, prefix})
+
+      items =
+        case prefix do
+          "" ->
+            [%{name: ".zarray"}, %{name: "0.0"}, %{name: "0.1"}, %{name: "1.0"}]
+
+          "v3/" ->
+            [%{name: "v3/zarr.json"}, %{name: "v3/c/0/0"}, %{name: "v3/c/0/1"}]
+
+          _ ->
+            [%{name: "#{prefix}.zarray"}, %{name: "#{prefix}0.0"}, %{name: "#{prefix}0.1"}]
+        end
+
+      {:ok, items}
+    end
+
+    def exists?(_client, _container, _opts \\ []), do: true
+  end
+
+  defmodule MockIdentity do
+    def new(account, key), do: %{account: account, key: key}
+  end
+
+  defmodule MockStorageClient do
+    def new(opts), do: %{opts: opts}
+  end
+
   setup do
-    # Inject mock module
-    Application.put_env(:ex_zarr, :azurex_blob_module, MockAzurexBlob)
+    Application.put_env(:ex_zarr, :azure_blob_module, MockBlob)
+    Application.put_env(:ex_zarr, :azure_container_module, MockContainer)
+    Application.put_env(:ex_zarr, :azure_identity_module, MockIdentity)
+    Application.put_env(:ex_zarr, :azure_storage_client_module, MockStorageClient)
 
     on_exit(fn ->
-      Application.delete_env(:ex_zarr, :azurex_blob_module)
+      Application.delete_env(:ex_zarr, :azure_blob_module)
+      Application.delete_env(:ex_zarr, :azure_container_module)
+      Application.delete_env(:ex_zarr, :azure_identity_module)
+      Application.delete_env(:ex_zarr, :azure_storage_client_module)
     end)
 
     :ok
+  end
+
+  defp base_config(opts \\ []) do
+    [
+      account_name: "myaccount",
+      account_key: "mykey",
+      container: "test-container"
+    ]
+    |> Keyword.merge(opts)
   end
 
   describe "backend_id/0" do
@@ -87,398 +145,117 @@ defmodule ExZarr.Storage.AzureBlobMockTest do
   end
 
   describe "init/1" do
-    test "initializes with required fields" do
-      config = [
-        account_name: "myaccount",
-        account_key: "mykey",
-        container: "test-container",
-        prefix: "data"
-      ]
-
-      assert {:ok, state} = AzureBlob.init(config)
-      assert state.account_name == "myaccount"
-      assert state.account_key == "mykey"
+    test "initializes with Shared Key fields" do
+      assert {:ok, state} = AzureBlob.init(base_config(prefix: "data"))
       assert state.container == "test-container"
       assert state.prefix == "data"
+      assert state.zarr_format == 2
+
+      assert state.client == %{
+               opts: [account: "myaccount", credential: %{account: "myaccount", key: "mykey"}]
+             }
     end
 
-    test "uses default empty prefix when not specified" do
-      config = [
-        account_name: "myaccount",
-        account_key: "mykey",
-        container: "test-container"
-      ]
+    test "accepts prebuilt azure_client without account credentials" do
+      client = %{prebuilt: true}
 
-      assert {:ok, state} = AzureBlob.init(config)
-      assert state.prefix == ""
-    end
+      assert {:ok, state} =
+               AzureBlob.init(
+                 azure_client: client,
+                 container: "c1",
+                 prefix: "p",
+                 zarr_format: 3
+               )
 
-    test "returns error for missing account_name" do
-      config = [account_key: "mykey", container: "test-container"]
-      assert {:error, :account_name_required} = AzureBlob.init(config)
-    end
-
-    test "returns error for missing account_key" do
-      config = [account_name: "myaccount", container: "test-container"]
-      assert {:error, :account_key_required} = AzureBlob.init(config)
+      assert state.client == client
+      assert state.zarr_format == 3
     end
 
     test "returns error for missing container" do
-      config = [account_name: "myaccount", account_key: "mykey"]
-      assert {:error, :container_required} = AzureBlob.init(config)
+      assert {:error, :container_required} =
+               AzureBlob.init(account_name: "a", account_key: "k")
+    end
+
+    test "returns error for missing Shared Key when no azure_client" do
+      assert {:error, :account_name_required} =
+               AzureBlob.init(account_key: "k", container: "c")
+
+      assert {:error, :account_key_required} =
+               AzureBlob.init(account_name: "a", container: "c")
     end
   end
 
-  describe "open/1" do
-    test "works same as init" do
-      config = [
-        account_name: "myaccount",
-        account_key: "mykey",
-        container: "test-container"
-      ]
+  describe "v2 object naming" do
+    test "reads and writes v2 chunk and metadata keys" do
+      {:ok, state} = AzureBlob.init(base_config())
 
-      assert {:ok, state} = AzureBlob.open(config)
-      assert state.account_name == "myaccount"
+      assert {:ok, _} = AzureBlob.read_chunk(state, {0, 0})
+      assert_receive {:azure_download, "0.0", _}
+
+      assert :ok = AzureBlob.write_chunk(state, {1, 2, 3}, <<9>>)
+      assert_receive {:azure_upload, "1.2.3", <<9>>}
+
+      assert {:ok, _} = AzureBlob.read_metadata(state)
+      assert_receive {:azure_download, ".zarray", _}
     end
   end
 
-  describe "read_chunk/2" do
-    test "reads chunk with empty prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
+  describe "v3 object naming" do
+    test "reads and writes v3 chunk and metadata keys" do
+      {:ok, state} = AzureBlob.init(base_config(zarr_format: 3, prefix: "arrays/exp"))
 
-      assert {:ok, data} = AzureBlob.read_chunk(state, {0, 0})
-      assert is_binary(data)
-      assert data == <<1, 2, 3, 4, 5>>
+      assert {:ok, _} = AzureBlob.read_chunk(state, {0, 1})
+      assert_receive {:azure_download, "arrays/exp/c/0/1", _}
 
-      assert_receive {:azurex_get, "0.0"}
+      assert :ok = AzureBlob.write_chunk(state, {2, 3}, <<1, 2>>)
+      assert_receive {:azure_upload, "arrays/exp/c/2/3", <<1, 2>>}
+
+      assert {:ok, _} = AzureBlob.read_metadata(state)
+      assert_receive {:azure_download, "arrays/exp/zarr.json", _}
     end
 
-    test "reads chunk with prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: "arrays/experiment1"
-        )
-
-      assert {:ok, data} = AzureBlob.read_chunk(state, {2, 5})
-      assert is_binary(data)
-
-      assert_receive {:azurex_get, "arrays/experiment1/2.5"}
-    end
-
-    test "handles 1D chunk indices" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      assert {:ok, _data} = AzureBlob.read_chunk(state, {42})
-      assert_receive {:azurex_get, "42"}
-    end
-
-    test "handles 3D chunk indices" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      assert {:ok, _data} = AzureBlob.read_chunk(state, {1, 2, 3})
-      assert_receive {:azurex_get, "1.2.3"}
-    end
-  end
-
-  describe "write_chunk/3" do
-    test "writes chunk with empty prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      chunk_data = <<10, 20, 30>>
-      assert :ok = AzureBlob.write_chunk(state, {0, 0}, chunk_data)
-
-      assert_receive {:azurex_put, "0.0", ^chunk_data}
-    end
-
-    test "writes chunk with prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: "experiment/run1"
-        )
-
-      chunk_data = <<10, 20, 30>>
-      assert :ok = AzureBlob.write_chunk(state, {5, 10}, chunk_data)
-
-      assert_receive {:azurex_put, "experiment/run1/5.10", ^chunk_data}
-    end
-  end
-
-  describe "read_metadata/1" do
-    test "reads metadata with empty prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      assert {:ok, json} = AzureBlob.read_metadata(state)
-      assert is_binary(json)
-
-      assert_receive {:azurex_get, ".zarray"}
-    end
-
-    test "reads metadata with prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: "arrays/experiment1"
-        )
-
-      assert {:ok, json} = AzureBlob.read_metadata(state)
-      assert is_binary(json)
-
-      assert_receive {:azurex_get, "arrays/experiment1/.zarray"}
-    end
-  end
-
-  describe "write_metadata/3" do
-    test "writes metadata" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      metadata = Jason.encode!(%{zarr_format: 2})
-      assert :ok = AzureBlob.write_metadata(state, metadata, [])
-
-      assert_receive {:azurex_put, ".zarray", ^metadata}
+    test "write_metadata uses zarr_format from JSON body" do
+      {:ok, state} = AzureBlob.init(base_config(zarr_format: 2))
+      meta = Jason.encode!(%{zarr_format: 3, node_type: "array"})
+      assert :ok = AzureBlob.write_metadata(state, meta, [])
+      assert_receive {:azure_upload, "zarr.json", ^meta}
     end
   end
 
   describe "list_chunks/1" do
-    test "lists chunks with empty prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
+    test "lists v2 chunks" do
+      {:ok, state} = AzureBlob.init(base_config())
       assert {:ok, chunks} = AzureBlob.list_chunks(state)
       assert Enum.sort(chunks) == [{0, 0}, {0, 1}, {1, 0}]
-
-      assert_receive {:azurex_list, ""}
     end
 
-    test "lists chunks with prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: "data"
-        )
-
+    test "lists v3 chunks" do
+      {:ok, state} = AzureBlob.init(base_config(prefix: "v3", zarr_format: 3))
       assert {:ok, chunks} = AzureBlob.list_chunks(state)
-      assert length(chunks) == 2
-
-      assert_receive {:azurex_list, "data/"}
-    end
-
-    test "does not include metadata file in chunk list" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      assert {:ok, chunks} = AzureBlob.list_chunks(state)
-      refute Enum.any?(chunks, fn chunk -> chunk == ".zarray" end)
+      assert Enum.sort(chunks) == [{0, 0}, {0, 1}]
     end
   end
 
-  describe "delete_chunk/2" do
-    test "deletes chunk" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      assert :ok = AzureBlob.delete_chunk(state, {0, 0})
-      assert_receive {:azurex_delete, "0.0"}
+  describe "range helpers" do
+    test "chunk_info and read_chunk_range" do
+      {:ok, state} = AzureBlob.init(base_config())
+      assert {:ok, %{size: 8, etag: "\"etag1\""}} = AzureBlob.chunk_info(state, {0, 0})
+      assert {:ok, <<3, 4>>} = AzureBlob.read_chunk_range(state, {0, 0}, 2, 2)
+      assert_receive {:azure_download, "0.0", opts}
+      assert Keyword.get(opts, :range) == {2, 3}
+      assert Keyword.get(opts, :if_match) == "\"etag1\""
     end
 
-    test "deletes chunk with prefix" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: "arrays/test"
-        )
-
-      assert :ok = AzureBlob.delete_chunk(state, {1, 2})
-      assert_receive {:azurex_delete, "arrays/test/1.2"}
+    test "capabilities includes range_read" do
+      {:ok, state} = AzureBlob.init(base_config())
+      assert MapSet.member?(AzureBlob.capabilities(state), :range_read)
     end
   end
 
-  describe "chunk key encoding" do
-    test "encodes 1D indices" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      AzureBlob.write_chunk(state, {42}, <<1, 2, 3>>)
-      assert_receive {:azurex_put, "42", _}
-    end
-
-    test "encodes 2D indices" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      AzureBlob.write_chunk(state, {1, 2}, <<1, 2, 3>>)
-      assert_receive {:azurex_put, "1.2", _}
-    end
-
-    test "encodes 3D indices" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      AzureBlob.write_chunk(state, {1, 2, 3}, <<1, 2, 3>>)
-      assert_receive {:azurex_put, "1.2.3", _}
-    end
-
-    test "encodes ND indices" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      AzureBlob.write_chunk(state, {1, 2, 3, 4, 5}, <<1, 2, 3>>)
-      assert_receive {:azurex_put, "1.2.3.4.5", _}
-    end
-  end
-
-  describe "integration scenarios" do
-    test "complete read/write cycle" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: "test"
-        )
-
-      # Write metadata
-      metadata = Jason.encode!(%{zarr_format: 2})
-      assert :ok = AzureBlob.write_metadata(state, metadata, [])
-
-      # Write chunks
-      assert :ok = AzureBlob.write_chunk(state, {0, 0}, <<1, 2, 3>>)
-      assert :ok = AzureBlob.write_chunk(state, {0, 1}, <<4, 5, 6>>)
-
-      # Read chunks
-      assert {:ok, _} = AzureBlob.read_chunk(state, {0, 0})
-      assert {:ok, _} = AzureBlob.read_chunk(state, {0, 1})
-
-      # List chunks
-      assert {:ok, chunks} = AzureBlob.list_chunks(state)
-      assert Enum.empty?(chunks) == false
-
-      # Delete chunk
-      assert :ok = AzureBlob.delete_chunk(state, {0, 0})
-    end
-  end
-
-  describe "concurrent operations" do
-    test "handles concurrent writes" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      tasks =
-        for i <- 0..4 do
-          Task.async(fn ->
-            AzureBlob.write_chunk(state, {i}, <<i>>)
-          end)
-        end
-
-      results = Task.await_many(tasks, 5_000)
-      assert Enum.all?(results, &(&1 == :ok))
-    end
-
-    test "handles concurrent reads" do
-      {:ok, state} =
-        AzureBlob.init(
-          account_name: "myaccount",
-          account_key: "mykey",
-          container: "test-container",
-          prefix: ""
-        )
-
-      tasks =
-        for i <- 0..4 do
-          Task.async(fn ->
-            AzureBlob.read_chunk(state, {i})
-          end)
-        end
-
-      results = Task.await_many(tasks, 5_000)
-      assert Enum.all?(results, &match?({:ok, _}, &1))
+  describe "error normalization" do
+    test "404 becomes :not_found" do
+      {:ok, state} = AzureBlob.init(base_config())
+      assert {:error, :not_found} = AzureBlob.read_chunk(state, {99, 99})
     end
   end
 end

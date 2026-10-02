@@ -54,7 +54,7 @@ defmodule ExZarr.MetadataV3 do
   alias ExZarr.DataType
 
   @type node_type :: :array | :group
-  @type data_type :: String.t()
+  @type data_type :: String.t() | map()
   @type codec_spec :: %{required(:name) => String.t(), optional(:configuration) => map()}
   @type chunk_grid :: %{required(:name) => String.t(), optional(:configuration) => map()}
   @type chunk_key_encoding :: %{
@@ -72,6 +72,7 @@ defmodule ExZarr.MetadataV3 do
           chunk_key_encoding: chunk_key_encoding() | nil,
           codecs: [codec_spec()] | nil,
           fill_value: term() | nil,
+          storage_transformers: [map()] | nil,
           # Common fields
           attributes: map(),
           dimension_names: [String.t() | nil] | nil
@@ -86,6 +87,7 @@ defmodule ExZarr.MetadataV3 do
     :chunk_key_encoding,
     :codecs,
     :fill_value,
+    :storage_transformers,
     :attributes,
     :dimension_names
   ]
@@ -143,6 +145,7 @@ defmodule ExZarr.MetadataV3 do
       map
       |> Map.put(:attributes, metadata.attributes || %{})
       |> maybe_put(:dimension_names, metadata.dimension_names)
+      |> maybe_put(:storage_transformers, metadata.storage_transformers)
     end
 
     defp maybe_put(map, _key, nil), do: map
@@ -285,77 +288,26 @@ defmodule ExZarr.MetadataV3 do
          :ok <- validate_required_field(metadata.codecs, :codecs),
          :ok <- validate_shape(metadata.shape),
          :ok <- validate_data_type(metadata.data_type),
-         :ok <- validate_chunk_grid(metadata.chunk_grid) do
-      validate_dimension_names(metadata.dimension_names, metadata.shape)
+         :ok <- validate_chunk_grid(metadata.chunk_grid),
+         :ok <- validate_dimension_names(metadata.dimension_names, metadata.shape) do
+      validate_storage_transformers(metadata.storage_transformers)
     end
   end
 
   @doc false
-  @spec validate_required_field(
-          term(),
-          :shape | :data_type | :chunk_grid | :chunk_key_encoding | :codecs
-        ) ::
-          :ok
-          | {:error,
-             {:missing_required_field,
-              :shape | :data_type | :chunk_grid | :chunk_key_encoding | :codecs}}
-  defp validate_required_field(nil, field_name),
-    do: {:error, {:missing_required_field, field_name}}
-
-  defp validate_required_field(_value, _field_name), do: :ok
-
-  @doc false
   @spec validate_shape(term()) :: :ok | {:error, {:invalid_shape, String.t()}}
   defp validate_shape(shape) when is_tuple(shape) do
-    if tuple_size(shape) > 0 and Enum.all?(Tuple.to_list(shape), &is_integer(&1)) and
-         Enum.all?(Tuple.to_list(shape), &(&1 > 0)) do
+    dims = Tuple.to_list(shape)
+
+    if Enum.all?(dims, &(is_integer(&1) and &1 >= 0)) do
       :ok
     else
-      {:error, {:invalid_shape, "Shape must contain only positive integers"}}
+      {:error, {:invalid_shape, "Shape dimensions must be non-negative integers"}}
     end
   end
 
   defp validate_shape(other),
     do: {:error, {:invalid_shape, "Expected tuple, got: #{inspect(other)}"}}
-
-  @doc false
-  @spec validate_data_type(term()) :: :ok | {:error, {:invalid_data_type, String.t()}}
-  defp validate_data_type(data_type) when is_binary(data_type) do
-    # v3 supports these core data types
-    valid_types = [
-      "bool",
-      "int8",
-      "int16",
-      "int32",
-      "int64",
-      "uint8",
-      "uint16",
-      "uint32",
-      "uint64",
-      "float32",
-      "float64"
-    ]
-
-    if data_type in valid_types do
-      :ok
-    else
-      # Extension types are allowed but we issue a warning (still valid)
-      :ok
-    end
-  end
-
-  defp validate_data_type(other),
-    do: {:error, {:invalid_data_type, "Expected string, got: #{inspect(other)}"}}
-
-  @doc false
-  @spec validate_chunk_grid(term()) :: :ok | {:error, {:invalid_chunk_grid, String.t()}}
-  defp validate_chunk_grid(%{name: name}) when is_binary(name) do
-    # Extension point - any name is valid
-    :ok
-  end
-
-  defp validate_chunk_grid(other),
-    do: {:error, {:invalid_chunk_grid, "Expected map with 'name' field, got: #{inspect(other)}"}}
 
   @doc false
   @spec validate_dimension_names([String.t() | nil] | nil, tuple()) ::
@@ -366,9 +318,8 @@ defmodule ExZarr.MetadataV3 do
   defp validate_dimension_names(names, shape) when is_list(names) do
     ndim = tuple_size(shape)
 
-    with :ok <- validate_dimension_names_count(names, ndim),
-         :ok <- validate_dimension_names_format(names) do
-      validate_dimension_names_unique(names)
+    with :ok <- validate_dimension_names_count(names, ndim) do
+      validate_dimension_names_format(names)
     end
   end
 
@@ -389,12 +340,10 @@ defmodule ExZarr.MetadataV3 do
 
   defp validate_dimension_names_format(names) do
     invalid =
-      Enum.find(names, fn name ->
-        case name do
-          nil -> false
-          name when is_binary(name) -> not valid_dimension_name?(name)
-          _ -> true
-        end
+      Enum.find(names, fn
+        nil -> false
+        name when is_binary(name) -> false
+        _ -> true
       end)
 
     case invalid do
@@ -404,29 +353,126 @@ defmodule ExZarr.MetadataV3 do
       name ->
         {:error,
          {:invalid_dimension_names,
-          "Invalid dimension name: #{inspect(name)}. Must be string with alphanumeric, underscore, or hyphen characters"}}
+          "Invalid dimension name: #{inspect(name)}. Must be a string or null"}}
     end
   end
 
-  defp validate_dimension_names_unique(names) do
-    # Filter out nils before checking uniqueness
-    non_nil_names = Enum.filter(names, &(&1 != nil))
+  @doc false
+  defp validate_storage_transformers(nil), do: :ok
+  defp validate_storage_transformers([]), do: :ok
 
-    if length(non_nil_names) == length(Enum.uniq(non_nil_names)) do
-      :ok
-    else
-      duplicates = non_nil_names -- Enum.uniq(non_nil_names)
+  defp validate_storage_transformers(transformers) when is_list(transformers) do
+    Enum.reduce_while(transformers, :ok, fn transformer, :ok ->
+      case normalize_extension(transformer) do
+        {:ok, ext} ->
+          name = Map.fetch!(ext, :name)
+          must_understand = Map.fetch!(ext, :must_understand)
 
+          if must_understand and not known_storage_transformer?(name) do
+            {:halt,
+             {:error,
+              {:unsupported_extension,
+               %{
+                 point: :storage_transformers,
+                 name: name,
+                 must_understand: true,
+                 extension: ext
+               }}}}
+          else
+            {:cont, :ok}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, {:invalid_extension, reason}}}
+      end
+    end)
+  end
+
+  defp validate_storage_transformers(other),
+    do: {:error, {:invalid_storage_transformers, "Expected list, got: #{inspect(other)}"}}
+
+  defp known_storage_transformer?(_name), do: false
+
+  @doc """
+  Normalizes a Zarr v3.1 extension definition (string or object) to a map.
+
+  Extension names remain binaries (never converted to atoms).
+  """
+  @spec normalize_extension(term()) ::
+          {:ok,
+           %{
+             name: String.t(),
+             configuration: map(),
+             must_understand: boolean(),
+             short_form: boolean()
+           }}
+          | {:error, term()}
+  def normalize_extension(name) when is_binary(name) do
+    {:ok, %{name: name, configuration: %{}, must_understand: true, short_form: true}}
+  end
+
+  def normalize_extension(ext) when is_map(ext) do
+    name = Map.get(ext, "name") || Map.get(ext, :name)
+    configuration = Map.get(ext, "configuration") || Map.get(ext, :configuration) || %{}
+
+    must_understand =
+      case Map.get(ext, "must_understand", Map.get(ext, :must_understand, true)) do
+        false -> false
+        "false" -> false
+        _ -> true
+      end
+
+    cond do
+      is_binary(name) ->
+        {:ok,
+         %{
+           name: name,
+           configuration: if(is_map(configuration), do: configuration, else: %{}),
+           must_understand: must_understand,
+           short_form: false
+         }}
+
+      true ->
+        {:error, {:missing_extension_name, ext}}
+    end
+  end
+
+  def normalize_extension(other), do: {:error, {:invalid_extension, other}}
+
+  @doc false
+  defp validate_required_field(nil, field_name),
+    do: {:error, {:missing_required_field, field_name}}
+
+  defp validate_required_field(_value, _field_name), do: :ok
+
+  @doc false
+  defp validate_data_type(data_type) when is_binary(data_type) do
+    # Core types and extension dtypes (object form) are accepted structurally;
+    # unsupported operational dtypes fail later with typed errors.
+    :ok
+  end
+
+  defp validate_data_type(%{} = dtype) do
+    case normalize_extension(dtype) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, {:invalid_data_type, reason}}
+    end
+  end
+
+  defp validate_data_type(other),
+    do:
       {:error,
-       {:invalid_dimension_names,
-        "Duplicate dimension names found: #{inspect(Enum.uniq(duplicates))}"}}
-    end
+       {:invalid_data_type, "Expected string or extension object, got: #{inspect(other)}"}}
+
+  @doc false
+  defp validate_chunk_grid(%{name: name}) when is_binary(name), do: :ok
+
+  defp validate_chunk_grid(%{"name" => name} = grid) when is_binary(name) do
+    validate_chunk_grid(%{name: name, configuration: Map.get(grid, "configuration")})
   end
 
-  defp valid_dimension_name?(name) when is_binary(name) do
-    # Valid dimension names: alphanumeric, underscore, hyphen, not empty
-    String.match?(name, ~r/^[a-zA-Z0-9_-]+$/)
-  end
+  defp validate_chunk_grid(other),
+    do: {:error, {:invalid_chunk_grid, "Expected map with 'name' field, got: #{inspect(other)}"}}
 
   @doc false
   @spec validate_codecs(t()) :: :ok | {:error, term()}
@@ -695,6 +741,7 @@ defmodule ExZarr.MetadataV3 do
       chunk_key_encoding: Map.get(map, "chunk_key_encoding"),
       codecs: parse_codecs(Map.get(map, "codecs")),
       fill_value: Map.get(map, "fill_value"),
+      storage_transformers: Map.get(map, "storage_transformers"),
       attributes: Map.get(map, "attributes", %{}),
       dimension_names: Map.get(map, "dimension_names")
     }

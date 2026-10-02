@@ -340,7 +340,7 @@ defmodule ExZarr.Storage.GCSMockTest do
       assert_receive {:req_post, _url, opts}
       params = Keyword.get(opts, :params, [])
       name = Keyword.get(params, :name)
-      assert name == "data/arrays/.zarray"
+      assert name == "data/arrays/zarr.json"
     end
   end
 

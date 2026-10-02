@@ -250,6 +250,64 @@ defmodule ExZarr.Storage.Backend.Filesystem do
 
   ## Private Helpers
 
+  @doc false
+  @impl true
+  def chunk_info(state, chunk_index) do
+    version = detect_version(state.path)
+    chunk_path = build_chunk_path(state.path, chunk_index, version)
+
+    case File.stat(chunk_path) do
+      {:ok, %{size: size}} -> {:ok, %{size: size}}
+      {:error, :enoent} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  @impl true
+  def read_chunk_range(state, chunk_index, offset, length)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
+    version = detect_version(state.path)
+    chunk_path = build_chunk_path(state.path, chunk_index, version)
+
+    if length == 0 do
+      {:ok, ""}
+    else
+      case :file.open(chunk_path, [:read, :binary, :raw]) do
+        {:ok, fd} ->
+          try do
+            case :file.pread(fd, offset, length) do
+              {:ok, data} when is_binary(data) and byte_size(data) == length ->
+                {:ok, data}
+
+              {:ok, data} when is_binary(data) ->
+                {:error,
+                 {:invalid_chunk_range,
+                  %{offset: offset, length: length, actual: byte_size(data)}}}
+
+              :eof ->
+                {:error, {:invalid_chunk_range, %{offset: offset, length: length}}}
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+          after
+            :file.close(fd)
+          end
+
+        {:error, :enoent} ->
+          {:error, :not_found}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc false
+  @impl true
+  def capabilities(_state), do: MapSet.new([:range_read])
+
   defp ensure_directory(path) do
     case File.mkdir_p(path) do
       :ok -> :ok

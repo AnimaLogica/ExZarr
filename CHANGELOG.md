@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-01
+
+### Zarr 3.1 Interoperability & Range-Aware Cloud I/O
+
+### Added
+- Optional storage range APIs: `chunk_info/2`, `read_chunk_range/4`, `capabilities/1`
+- `ExZarr.Storage.ObjectKeys` for centralized v2/v3 object naming
+- `storage_transformers` metadata parse/preserve with `must_understand` enforcement
+- Extension normalization via `MetadataV3.normalize_extension/1`
+- Python fixture generator and CI matrix job (zarr 2.x / 3.2 / 3.3 / 3.4)
+- Range-aware sharded reads with bounded concurrency and full-shard fallback
+- Azurite-oriented Azure integration test (tagged `:azure`)
+- Showcase: `examples/range_aware_sharded_nx.exs`
+
+### Fixed
+- Scalar (`shape: {}`) and zero-length dimension support in MetadataV3 / Array
+- Dimension-name over-validation (spec strings/nil; uniqueness not required at metadata)
+- Cloud backends no longer hardcode v2-only `.zarray` / dot chunk keys
+- `sharding_indexed` now follows accepted v1.0 dense index + sentinel format
+
+### Changed
+- Azure Blob backend uses optional `azure_sdk ~> 0.4.1`
+- Shared Key config preserved; advanced path via `azure_client:`
+- Docs state tested compatibility more precisely
+
+### Removed
+- `azurex` dependency and Azurex-based adapter code
+
+### Known limitations
+- Storage transformers are not executed (metadata only)
+- No adaptive multi-range coalescing
+- No partial writes inside cloud shards
+- Legacy ExZarr-private shard bytes are not silently decoded as standard Zarr
+
 ## [1.1.0] - 2026-06-12
 
 ### BEAM-Native Streaming and Concurrent Zarr Processing

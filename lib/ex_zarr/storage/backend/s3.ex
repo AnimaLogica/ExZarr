@@ -95,6 +95,7 @@ defmodule ExZarr.Storage.Backend.S3 do
         bucket: bucket,
         prefix: prefix,
         region: region,
+        zarr_format: Keyword.get(config, :zarr_format, 2),
         ex_aws_config: build_ex_aws_config(region, endpoint_url)
       }
 
@@ -110,7 +111,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def read_chunk(state, chunk_index) do
-    key = build_chunk_key(state.prefix, chunk_index)
+    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
 
     case ex_aws_s3().get_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
       {:ok, %{body: body}} ->
@@ -126,7 +127,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def write_chunk(state, chunk_index, data) do
-    key = build_chunk_key(state.prefix, chunk_index)
+    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
 
     case ex_aws_s3().put_object(state.bucket, key, data)
          |> ex_aws().request(state.ex_aws_config) do
@@ -140,7 +141,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def read_metadata(state) do
-    key = build_metadata_key(state.prefix)
+    key = ExZarr.Storage.ObjectKeys.metadata_key(state.prefix, state.zarr_format)
 
     case ex_aws_s3().get_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
       {:ok, %{body: body}} ->
@@ -156,7 +157,13 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def write_metadata(state, metadata, _opts) when is_binary(metadata) do
-    key = build_metadata_key(state.prefix)
+    version =
+      case Jason.decode(metadata) do
+        {:ok, %{"zarr_format" => 3}} -> 3
+        _ -> state.zarr_format
+      end
+
+    key = ExZarr.Storage.ObjectKeys.metadata_key(state.prefix, version)
 
     case ex_aws_s3().put_object(state.bucket, key, metadata)
          |> ex_aws().request(state.ex_aws_config) do
@@ -170,7 +177,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def list_chunks(state) do
-    prefix = if state.prefix == "", do: "", else: "#{state.prefix}/"
+    prefix = ExZarr.Storage.ObjectKeys.list_prefix(state.prefix)
 
     case ex_aws_s3().list_objects_v2(state.bucket, prefix: prefix)
          |> ex_aws().request(state.ex_aws_config) do
@@ -178,8 +185,10 @@ defmodule ExZarr.Storage.Backend.S3 do
         chunks =
           objects
           |> Enum.map(& &1.key)
-          |> Enum.filter(&chunk_key?/1)
-          |> Enum.map(&parse_chunk_key(&1, state.prefix))
+          |> Enum.filter(&ExZarr.Storage.ObjectKeys.chunk_key?(&1, state.zarr_format))
+          |> Enum.map(
+            &ExZarr.Storage.ObjectKeys.parse_chunk_key(&1, state.prefix, state.zarr_format)
+          )
           |> Enum.reject(&is_nil/1)
 
         {:ok, chunks}
@@ -191,7 +200,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def delete_chunk(state, chunk_index) do
-    key = build_chunk_key(state.prefix, chunk_index)
+    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
 
     case ex_aws_s3().delete_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
       {:ok, _} ->
@@ -219,6 +228,70 @@ defmodule ExZarr.Storage.Backend.S3 do
         false
     end
   end
+
+  @doc false
+  @impl true
+  def chunk_info(state, chunk_index) do
+    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+
+    case ex_aws_s3().head_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
+      {:ok, %{headers: headers}} ->
+        size =
+          headers
+          |> Enum.find_value(fn
+            {"Content-Length", v} -> String.to_integer(v)
+            {"content-length", v} -> String.to_integer(v)
+            _ -> nil
+          end)
+
+        etag =
+          Enum.find_value(headers, fn
+            {"ETag", v} -> v
+            {"etag", v} -> v
+            _ -> nil
+          end)
+
+        if is_integer(size) do
+          {:ok, %{size: size, etag: etag}}
+        else
+          {:error, {:s3_error, :missing_content_length}}
+        end
+
+      {:error, {:http_error, 404, _}} ->
+        {:error, :not_found}
+
+      {:error, reason} ->
+        {:error, {:s3_error, reason}}
+    end
+  end
+
+  @doc false
+  @impl true
+  def read_chunk_range(state, chunk_index, offset, length)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
+    if length == 0 do
+      {:ok, ""}
+    else
+      key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+      range = "bytes=#{offset}-#{offset + length - 1}"
+
+      case ex_aws_s3().get_object(state.bucket, key, headers: [{"range", range}])
+           |> ex_aws().request(state.ex_aws_config) do
+        {:ok, %{body: body}} ->
+          {:ok, body}
+
+        {:error, {:http_error, 404, _}} ->
+          {:error, :not_found}
+
+        {:error, reason} ->
+          {:error, {:s3_error, reason}}
+      end
+    end
+  end
+
+  @doc false
+  @impl true
+  def capabilities(_state), do: MapSet.new([:range_read])
 
   ## Private Helpers
 
@@ -277,50 +350,6 @@ defmodule ExZarr.Storage.Backend.S3 do
       end
 
     config
-  end
-
-  defp build_chunk_key(prefix, chunk_index, version \\ 2) do
-    chunk_name = ExZarr.ChunkKey.encode(chunk_index, version)
-
-    if prefix == "" do
-      chunk_name
-    else
-      Path.join(prefix, chunk_name)
-    end
-  end
-
-  defp build_metadata_key(""), do: ".zarray"
-  defp build_metadata_key(prefix), do: "#{prefix}/.zarray"
-
-  defp chunk_key?(key) do
-    # Use ChunkKey pattern matching for v2 format (default for S3)
-    basename = Path.basename(key)
-    pattern = ExZarr.ChunkKey.chunk_key_pattern(2)
-    String.match?(basename, pattern)
-  end
-
-  defp parse_chunk_key(key, "") do
-    key
-    |> String.split(".")
-    |> Enum.map(&String.to_integer/1)
-    |> List.to_tuple()
-  rescue
-    _ -> nil
-  end
-
-  defp parse_chunk_key(key, prefix) do
-    # Remove prefix and leading slash
-    relative_key =
-      key
-      |> String.trim_leading(prefix)
-      |> String.trim_leading("/")
-
-    relative_key
-    |> String.split(".")
-    |> Enum.map(&String.to_integer/1)
-    |> List.to_tuple()
-  rescue
-    _ -> nil
   end
 
   # Allow injection for testing

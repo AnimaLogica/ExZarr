@@ -109,6 +109,25 @@ Called when opening an existing array. Verify the location exists and set up con
 ```
 Read compressed chunk bytes by coordinate. Return `{:error, :not_found}` if chunk doesn't exist.
 
+### Optional range callbacks (v1.2+)
+
+Implement these to enable range-aware sharded reads without downloading full objects:
+
+```elixir
+@optional_callbacks chunk_info: 2, read_chunk_range: 4, capabilities: 1
+
+@callback chunk_info(state, chunk_index) ::
+  {:ok, %{size: non_neg_integer(), etag: String.t() | nil}} | {:error, term()}
+
+@callback read_chunk_range(state, chunk_index, offset, length) ::
+  {:ok, binary()} | {:error, term()}
+
+@callback capabilities(state) :: map()
+```
+
+Use `ExZarr.Storage.Backend.supports?(backend, state, :range_read)` to detect support.
+Backends that omit these callbacks continue to work via full `read_chunk/2`.
+
 **5. `write_chunk/3` - Write chunk data**
 ```elixir
 @callback write_chunk(state :: term(), chunk_index :: tuple(), data :: binary()) ::

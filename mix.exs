@@ -1,7 +1,7 @@
 defmodule ExZarr.MixProject do
   use Mix.Project
 
-  @version "1.1.0"
+  @version "1.2.0"
   @source_url "https://github.com/thanos/ExZarr"
 
   def project do
@@ -74,7 +74,7 @@ defmodule ExZarr.MixProject do
       {:sweet_xml, "~> 0.7", optional: true},
       {:goth, "~> 1.4", optional: true},
       {:google_api_storage, "~> 0.36", optional: true},
-      {:azurex, "~> 1.1"},
+      {:azure_sdk, "~> 0.4.1", optional: true},
       {:req, "~> 0.4", optional: true},
 
       # Database storage backends (optional)
@@ -170,6 +170,7 @@ defmodule ExZarr.MixProject do
         "guides/telemetry.md",
         "migration_guide_v1_1_0.md",
         "release_notes_v1_1_0.md",
+        "release_notes_v1_2_0.md",
         "ROADMAP.md",
         "docs/architecture_review.md",
         "docs/gap_analysis.md",
@@ -229,6 +230,11 @@ defmodule ExZarr.MixProject do
           "docs/cloud_storage_patterns.md",
           "docs/educational/v1_1_streaming_guide.md",
           "guides/telemetry.md"
+        ],
+        "v1.2 Interop & Ranges": [
+          "release_notes_v1_2_0.md",
+          "ROADMAP.md",
+          "ZARR_V3_STATUS.md"
         ],
         Cookbook: [
           "docs/cookbook/README.md",
