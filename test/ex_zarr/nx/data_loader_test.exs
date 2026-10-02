@@ -259,8 +259,8 @@ defmodule ExZarr.Nx.DataLoaderTest do
 
         assert length(batches) == 4
 
-        assert {:ok, {X_batch, y_batch}} = Enum.at(batches, 0)
-        assert Nx.shape(X_batch) == {32, 20}
+        assert {:ok, {x_batch, y_batch}} = Enum.at(batches, 0)
+        assert Nx.shape(x_batch) == {32, 20}
         assert Nx.shape(y_batch) == {32, 1}
       end
 
@@ -273,14 +273,14 @@ defmodule ExZarr.Nx.DataLoaderTest do
           |> Enum.to_list()
 
         # Check first batch alignment
-        assert {:ok, {X_batch, y_batch}} = Enum.at(batches, 0)
+        assert {:ok, {x_batch, y_batch}} = Enum.at(batches, 0)
 
         # First sample: features should be [0, 0, 0], label [0]
-        assert Nx.to_number(X_batch[0][0]) == 0
+        assert Nx.to_number(x_batch[0][0]) == 0
         assert Nx.to_number(y_batch[0][0]) == 0
 
         # Second sample: features [1, 1, 1], label [1]
-        assert Nx.to_number(X_batch[1][0]) == 1
+        assert Nx.to_number(x_batch[1][0]) == 1
         assert Nx.to_number(y_batch[1][0]) == 1
       end
 
@@ -305,8 +305,8 @@ defmodule ExZarr.Nx.DataLoaderTest do
         # Should have 3 complete batches
         assert length(batches) == 3
 
-        Enum.each(batches, fn {:ok, {X_batch, y_batch}} ->
-          assert Nx.shape(X_batch) == {32, 20}
+        Enum.each(batches, fn {:ok, {x_batch, y_batch}} ->
+          assert Nx.shape(x_batch) == {32, 20}
           assert Nx.shape(y_batch) == {32, 1}
         end)
       end
@@ -324,11 +324,11 @@ defmodule ExZarr.Nx.DataLoaderTest do
         assert length(batches) == 4
 
         # Verify alignment is maintained after shuffling
-        {:ok, {X_batch, y_batch}} = Enum.at(batches, 0)
+        {:ok, {x_batch, y_batch}} = Enum.at(batches, 0)
 
         # Each sample's label should match its feature
         for i <- 0..31 do
-          feature_val = Nx.to_number(X_batch[i][0])
+          feature_val = Nx.to_number(x_batch[i][0])
           label_val = Nx.to_number(y_batch[i][0])
           assert feature_val == label_val
         end
@@ -348,8 +348,8 @@ defmodule ExZarr.Nx.DataLoaderTest do
 
         # Should produce identical batches
         Enum.zip(batches1, batches2)
-        |> Enum.each(fn {{:ok, {X1, y1}}, {:ok, {X2, y2}}} ->
-          assert Nx.all(Nx.equal(X1, X2)) |> Nx.to_number() == 1
+        |> Enum.each(fn {{:ok, {x1, y1}}, {:ok, {x2, y2}}} ->
+          assert Nx.all(Nx.equal(x1, x2)) |> Nx.to_number() == 1
           assert Nx.all(Nx.equal(y1, y2)) |> Nx.to_number() == 1
         end)
       end

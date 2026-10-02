@@ -954,7 +954,10 @@ defmodule ExZarr.Array do
         |> Enum.reduce(0, fn {idx, stride}, a -> a + idx * stride end)
 
       byte_offset = offset * element_size
-      <<before::binary-size(^byte_offset), _::binary-size(^element_size), after_part::binary>> = acc
+
+      <<before::binary-size(^byte_offset), _::binary-size(^element_size), after_part::binary>> =
+        acc
+
       <<before::binary, new_elem::binary, after_part::binary>>
     end)
   end
@@ -3310,7 +3313,9 @@ defmodule ExZarr.Array do
       chunk_offset = (chunk_row * chunk_w + (overlap_start_x - chunk_start_x)) * element_size
 
       # Write row to chunk
-      <<before::binary-size(^chunk_offset), _::binary-size(^row_length), after_part::binary>> = acc
+      <<before::binary-size(^chunk_offset), _::binary-size(^row_length), after_part::binary>> =
+        acc
+
       <<before::binary, row_data::binary, after_part::binary>>
     end)
   end
@@ -3377,7 +3382,8 @@ defmodule ExZarr.Array do
       chunk_byte_offset = chunk_offset * element_size
 
       # Write element to chunk
-      <<before::binary-size(^chunk_byte_offset), _::binary-size(^element_size), after_part::binary>> =
+      <<before::binary-size(^chunk_byte_offset), _::binary-size(^element_size),
+        after_part::binary>> =
         acc
 
       <<before::binary, element::binary, after_part::binary>>

@@ -57,7 +57,11 @@ defmodule ExZarr.Storage.ObjectKeys do
   `:zarr_format` and optionally `:chunk_key_encoding`.
   """
   @spec state_chunk_key(
-          %{required(:prefix) => prefix(), required(:zarr_format) => version(), optional(atom()) => term()},
+          %{
+            required(:prefix) => prefix(),
+            required(:zarr_format) => version(),
+            optional(atom()) => term()
+          },
           chunk_index()
         ) :: String.t()
   def state_chunk_key(%{prefix: prefix, zarr_format: version} = state, chunk_index) do

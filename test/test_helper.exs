@@ -9,11 +9,12 @@
 # - :python_fixtures - zarr-python fixture manifest check (needs EXZARR_PYTHON_FIXTURES)
 #
 # CI runs only self-contained backends: Memory, ETS, Mock, Filesystem, Zip
+# Nx unit tests run by default (Nx is a project dependency).
 #
-# To run these tests locally:
+# To run live cloud/Python tests locally:
 #   mix test --include s3 --include gcs --include azure --include mongo --include mnesia --include python
 ExUnit.configure(
-  exclude: [:s3, :gcs, :azure, :mongo, :mnesia, :python, :python_fixtures, :nx_integration]
+  exclude: [:s3, :gcs, :azure, :mongo, :mnesia, :python, :python_fixtures]
 )
 
 ExUnit.start()

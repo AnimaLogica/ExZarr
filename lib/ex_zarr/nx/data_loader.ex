@@ -53,8 +53,8 @@ defmodule ExZarr.Nx.DataLoader do
       {:ok, labels} = ExZarr.open(path: "/data/y")
 
       ExZarr.Nx.DataLoader.paired_batch_stream(features, labels, 32)
-      |> Enum.each(fn {:ok, {X_batch, y_batch}} ->
-        train_step(model, X_batch, y_batch)
+      |> Enum.each(fn {:ok, {x_batch, y_batch}} ->
+        train_step(model, x_batch, y_batch)
       end)
   """
 
@@ -260,7 +260,7 @@ defmodule ExZarr.Nx.DataLoader do
 
   ## Returns
 
-  Stream yielding `{:ok, {X_batch, y_batch}}` or `{:error, term()}` for each batch pair.
+  Stream yielding `{:ok, {x_batch, y_batch}}` or `{:error, term()}` for each batch pair.
 
   ## Examples
 
@@ -269,14 +269,14 @@ defmodule ExZarr.Nx.DataLoader do
       {:ok, y} = ExZarr.open(path: "/data/labels")
 
       ExZarr.Nx.DataLoader.paired_batch_stream(X, y, 32)
-      |> Enum.each(fn {:ok, {X_batch, y_batch}} ->
-        train_step(model, X_batch, y_batch)
+      |> Enum.each(fn {:ok, {x_batch, y_batch}} ->
+        train_step(model, x_batch, y_batch)
       end)
 
       # With shuffling
       ExZarr.Nx.DataLoader.paired_shuffled_batch_stream(X, y, 32)
-      |> Enum.each(fn {:ok, {X_batch, y_batch}} ->
-        train_step(model, X_batch, y_batch)
+      |> Enum.each(fn {:ok, {x_batch, y_batch}} ->
+        train_step(model, x_batch, y_batch)
       end)
 
   """
@@ -316,9 +316,9 @@ defmodule ExZarr.Nx.DataLoader do
           nil
         else
           # Load both batches
-          with {:ok, X_batch} <- load_batch(features, start_idx, end_idx, opts),
+          with {:ok, x_batch} <- load_batch(features, start_idx, end_idx, opts),
                {:ok, y_batch} <- load_batch(labels, start_idx, end_idx, opts) do
-            {{:ok, {X_batch, y_batch}}, batch_idx + 1}
+            {{:ok, {x_batch, y_batch}}, batch_idx + 1}
           else
             {:error, reason} -> {{:error, reason}, batch_idx + 1}
           end
@@ -341,7 +341,7 @@ defmodule ExZarr.Nx.DataLoader do
 
   ## Returns
 
-  Stream yielding `{:ok, {X_batch, y_batch}}` or `{:error, term()}` for each shuffled batch pair.
+  Stream yielding `{:ok, {x_batch, y_batch}}` or `{:error, term()}` for each shuffled batch pair.
 
   ## Examples
 
@@ -351,8 +351,8 @@ defmodule ExZarr.Nx.DataLoader do
       # Shuffled training
       for epoch <- 1..10 do
         ExZarr.Nx.DataLoader.paired_shuffled_batch_stream(X, y, 32, seed: epoch)
-        |> Enum.each(fn {:ok, {X_batch, y_batch}} ->
-          train_step(model, X_batch, y_batch)
+        |> Enum.each(fn {:ok, {x_batch, y_batch}} ->
+          train_step(model, x_batch, y_batch)
         end)
       end
 
@@ -405,9 +405,9 @@ defmodule ExZarr.Nx.DataLoader do
           batch_indices = Enum.slice(indices, start_idx, actual_batch_size)
 
           # Load both batches with same indices
-          with {:ok, X_batch} <- load_samples_at_indices(features, batch_indices, opts),
+          with {:ok, x_batch} <- load_samples_at_indices(features, batch_indices, opts),
                {:ok, y_batch} <- load_samples_at_indices(labels, batch_indices, opts) do
-            {{:ok, {X_batch, y_batch}}, batch_idx + 1}
+            {{:ok, {x_batch, y_batch}}, batch_idx + 1}
           else
             {:error, reason} -> {{:error, reason}, batch_idx + 1}
           end
