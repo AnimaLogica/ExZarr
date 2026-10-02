@@ -373,9 +373,8 @@ defmodule ExZarr.Array do
              }),
            dest = Storage.put_layout(dest, storage_layout(array.metadata)),
            :ok <- Storage.write_metadata(dest, array.metadata, []),
-           {:ok, chunk_indices} <- Storage.list_chunks(array.storage),
-           :ok <- copy_chunks(array.storage, dest, chunk_indices) do
-        :ok
+           {:ok, chunk_indices} <- Storage.list_chunks(array.storage) do
+        copy_chunks(array.storage, dest, chunk_indices)
       end
     end
   end
@@ -2694,10 +2693,8 @@ defmodule ExZarr.Array do
       results =
         Enum.zip(chunks, indices)
         |> Enum.map(fn {chunk_data, index} ->
-          with {:ok, compressed} <- apply_codec_pipeline_encode(array, chunk_data),
-               :ok <-
-                 normalize_write_result(Storage.write_chunk(array.storage, index, compressed)) do
-            :ok
+          with {:ok, compressed} <- apply_codec_pipeline_encode(array, chunk_data) do
+            normalize_write_result(Storage.write_chunk(array.storage, index, compressed))
           end
         end)
 
