@@ -1,4 +1,6 @@
-# ExZarr Gap Analysis: v1.1.0
+# Gap Analysis
+
+As of  v1.1.0
 
 ## Comparison Matrix
 

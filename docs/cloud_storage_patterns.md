@@ -1,4 +1,4 @@
-# Cloud Storage Patterns for ExZarr v1.1.0
+# Cloud Storage Patterns (v1.1.0)
 
 ## Overview
 

@@ -1,4 +1,4 @@
-# Embeddings at scale in Elixir: store vectors in ExZarr and do fast similarity search
+# Embeddings at scale in Elixir: store vectors in Zarr and do fast similarity search
 
 This draft pairs with the Livebook:
 `livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd`.

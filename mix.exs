@@ -149,51 +149,50 @@ defmodule ExZarr.MixProject do
       main: "what_is_zarr",
       extras: [
         # Getting Started
-        "guides/what_is_zarr.md",
-        "guides/introduction.md",
-        {"README.md", title: "Project README"},
+        "docs/guides/what_is_zarr.md",
+        {"README.md", title: "Introduction"},
 
         # Core Concepts
-        "guides/core_concepts.md",
-        "guides/parallel_io.md",
+        "docs/guides/core_concepts.md",
+        "docs/guides/parallel_io.md",
 
         # Storage and Backends
-        "guides/storage_providers.md",
-        "guides/custom_storage_backend.md",
+        "docs/guides/storage_providers.md",
+        "docs/guides/custom_storage_backend.md",
 
         # Compression and Data Processing
-        "guides/compression_codecs.md",
-        "guides/python_interop.md",
+        "docs/guides/compression_codecs.md",
+        "docs/guides/python_interop.md",
 
         # Advanced Topics
-        "guides/performance.md",
-        "guides/nx_integration.md",
-        "guides/telemetry.md",
+        "docs/guides/performance.md",
+        "docs/guides/nx_integration.md",
+        "docs/guides/telemetry.md",
         "docs/educational/v1_1_streaming_guide.md",
 
         # Examples
-        "livebooks/README.md",
-        "livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
-        "livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
-        "livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
-        "livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
-        "livebooks/05_finance/05_01_tick_data_cube.livemd",
-        "livebooks/broadway_pipeline.livemd",
-        "livebooks/nx_streaming.livemd",
-        "livebooks/zarr_fundamentals.livemd",
-        "livebooks/earthmover_datacube.livemd",
-        "livebooks/xarray_zarr_intro.livemd",
-        "livebooks/benchmarking_zarr.livemd",
+        "docs/livebooks/README.md",
+        "docs/livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+        "docs/livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+        "docs/livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
+        "docs/livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
+        "docs/livebooks/05_finance/05_01_tick_data_cube.livemd",
+        "docs/livebooks/broadway_pipeline.livemd",
+        "docs/livebooks/nx_streaming.livemd",
+        "docs/livebooks/zarr_fundamentals.livemd",
+        "docs/livebooks/earthmover_datacube.livemd",
+        "docs/livebooks/xarray_zarr_intro.livemd",
+        "docs/livebooks/benchmarking_zarr.livemd",
         "examples/README.md",
 
         # Cookbooks
-        "livebooks/06_cookbook/06_01_100gb_arrays.livemd",
-        "livebooks/06_cookbook/06_02_1tb_arrays.livemd",
-        "livebooks/06_cookbook/06_03_image_archives.livemd",
-        "livebooks/06_cookbook/06_04_ml_pipelines.livemd",
-        "livebooks/06_cookbook/06_05_geospatial.livemd",
-        "livebooks/06_cookbook/06_06_scientific_computing.livemd",
-        "livebooks/06_cookbook/06_07_distributed.livemd",
+        "docs/livebooks/06_cookbook/06_01_100gb_arrays.livemd",
+        "docs/livebooks/06_cookbook/06_02_1tb_arrays.livemd",
+        "docs/livebooks/06_cookbook/06_03_image_archives.livemd",
+        "docs/livebooks/06_cookbook/06_04_ml_pipelines.livemd",
+        "docs/livebooks/06_cookbook/06_05_geospatial.livemd",
+        "docs/livebooks/06_cookbook/06_06_scientific_computing.livemd",
+        "docs/livebooks/06_cookbook/06_07_distributed.livemd",
 
         # Architecture
         "docs/architecture_review.md",
@@ -217,59 +216,58 @@ defmodule ExZarr.MixProject do
         "LICENSE",
 
         # Reference
-        "guides/troubleshooting.md",
-        "guides/glossary.md",
+        "docs/guides/troubleshooting.md",
+        "docs/guides/glossary.md",
 
         # Contributing
-        "guides/contributing.md"
+        "docs/guides/contributing.md"
       ],
       groups_for_extras: [
         "Getting Started": [
-          "guides/what_is_zarr.md",
-          "guides/introduction.md",
+          "docs/guides/what_is_zarr.md",
           "README.md"
         ],
         "Core Concepts": [
-          "guides/core_concepts.md",
-          "guides/parallel_io.md"
+          "docs/guides/core_concepts.md",
+          "docs/guides/parallel_io.md"
         ],
         "Storage and Backends": [
-          "guides/storage_providers.md",
-          "guides/custom_storage_backend.md"
+          "docs/guides/storage_providers.md",
+          "docs/guides/custom_storage_backend.md"
         ],
         "Compression and Data Processing": [
-          "guides/compression_codecs.md",
-          "guides/python_interop.md"
+          "docs/guides/compression_codecs.md",
+          "docs/guides/python_interop.md"
         ],
         "Advanced Topics": [
-          "guides/performance.md",
-          "guides/nx_integration.md",
-          "guides/telemetry.md",
+          "docs/guides/performance.md",
+          "docs/guides/nx_integration.md",
+          "docs/guides/telemetry.md",
           "docs/educational/v1_1_streaming_guide.md"
         ],
         Examples: [
-          "livebooks/README.md",
-          "livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
-          "livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
-          "livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
-          "livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
-          "livebooks/05_finance/05_01_tick_data_cube.livemd",
-          "livebooks/broadway_pipeline.livemd",
-          "livebooks/nx_streaming.livemd",
-          "livebooks/zarr_fundamentals.livemd",
-          "livebooks/earthmover_datacube.livemd",
-          "livebooks/xarray_zarr_intro.livemd",
-          "livebooks/benchmarking_zarr.livemd",
+          "docs/livebooks/README.md",
+          "docs/livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+          "docs/livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+          "docs/livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
+          "docs/livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
+          "docs/livebooks/05_finance/05_01_tick_data_cube.livemd",
+          "docs/livebooks/broadway_pipeline.livemd",
+          "docs/livebooks/nx_streaming.livemd",
+          "docs/livebooks/zarr_fundamentals.livemd",
+          "docs/livebooks/earthmover_datacube.livemd",
+          "docs/livebooks/xarray_zarr_intro.livemd",
+          "docs/livebooks/benchmarking_zarr.livemd",
           "examples/README.md"
         ],
         Cookbooks: [
-          "livebooks/06_cookbook/06_01_100gb_arrays.livemd",
-          "livebooks/06_cookbook/06_02_1tb_arrays.livemd",
-          "livebooks/06_cookbook/06_03_image_archives.livemd",
-          "livebooks/06_cookbook/06_04_ml_pipelines.livemd",
-          "livebooks/06_cookbook/06_05_geospatial.livemd",
-          "livebooks/06_cookbook/06_06_scientific_computing.livemd",
-          "livebooks/06_cookbook/06_07_distributed.livemd"
+          "docs/livebooks/06_cookbook/06_01_100gb_arrays.livemd",
+          "docs/livebooks/06_cookbook/06_02_1tb_arrays.livemd",
+          "docs/livebooks/06_cookbook/06_03_image_archives.livemd",
+          "docs/livebooks/06_cookbook/06_04_ml_pipelines.livemd",
+          "docs/livebooks/06_cookbook/06_05_geospatial.livemd",
+          "docs/livebooks/06_cookbook/06_06_scientific_computing.livemd",
+          "docs/livebooks/06_cookbook/06_07_distributed.livemd"
         ],
         Architecture: [
           "docs/architecture_review.md",
@@ -285,7 +283,6 @@ defmodule ExZarr.MixProject do
           "docs/SECURITY.md",
           "docs/PERFORMANCE_IMPROVEMENTS.md",
           "docs/V2_TO_V3_MIGRATION.md",
-
           "benchmarks/README.md",
           "docs/PRECOMPILATION.md",
           "LICENSE"
@@ -293,14 +290,14 @@ defmodule ExZarr.MixProject do
         "Release Notes & Migration Guides": [
           "docs/release_notes_v1_1_0.md",
           "docs/release_notes_v1_2_0.md",
-          "docs/migration_guide_v1_1_0.md",
+          "docs/migration_guide_v1_1_0.md"
         ],
         Reference: [
-          "guides/troubleshooting.md",
-          "guides/glossary.md"
+          "docs/guides/troubleshooting.md",
+          "docs/guides/glossary.md"
         ],
         Contributing: [
-          "guides/contributing.md"
+          "docs/guides/contributing.md"
         ]
       ],
       source_ref: "v#{@version}",

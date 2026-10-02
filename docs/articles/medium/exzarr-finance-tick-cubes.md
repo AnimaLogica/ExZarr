@@ -1,4 +1,4 @@
-# Tick data cubes in Elixir with ExZarr: time × symbol × field
+# Tick data cubes in Elixir: time × symbol × field
 
 This draft pairs with the Livebook:
 `livebooks/05_finance/05_01_tick_data_cube.livemd`.

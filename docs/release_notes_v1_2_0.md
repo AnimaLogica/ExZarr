@@ -1,4 +1,4 @@
-# ExZarr v1.2.0 Release Notes
+# v1.2.0 Release Notes
 
 ## Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 

@@ -1,4 +1,4 @@
-# ExZarr v1.1.0 Release Notes
+# v1.1.0 Release Notes
 
 ## BEAM-Native Streaming and Concurrent Zarr Processing
 

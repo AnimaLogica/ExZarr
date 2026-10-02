@@ -1,4 +1,4 @@
-# ExZarr 101: Cloud‑native arrays in Elixir with Zarr v2
+# Cloud-native arrays in Elixir with Zarr v2
 
 Zarr is a storage format (and set of conventions) for **chunked, compressed, N‑dimensional arrays** that works well on local disks *and* on object stores (S3/GCS/Azure). ExZarr brings that model to Elixir so you can combine:
 

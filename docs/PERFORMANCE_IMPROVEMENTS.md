@@ -1,4 +1,4 @@
-# ExZarr Performance Optimization Summary
+# Performance Optimization Summary
 
 ## Overview
 

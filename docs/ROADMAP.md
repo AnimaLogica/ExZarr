@@ -1,4 +1,4 @@
-# ExZarr Roadmap
+# Roadmap
 
 ## v1.2.0 (Current) — Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 

@@ -1,4 +1,4 @@
-# ExZarr Configuration Guide
+# Configuration Guide
 
 This guide explains how to configure ExZarr's compression libraries and other configurable options.
 

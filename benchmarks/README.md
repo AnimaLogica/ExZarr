@@ -1,4 +1,4 @@
-# ExZarr Benchmarks
+# Benchmarks
 
 Comprehensive benchmarking suite for ExZarr performance testing.
 

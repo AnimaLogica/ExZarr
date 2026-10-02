@@ -21,4 +21,4 @@ mix run examples/basic_usage.exs
 | `s3_storage.exs` | S3 backend demo |
 | `sharded_cloud_storage.exs` | Sharding + cloud layout |
 
-For interactive tutorials, see the [Livebook gallery](../livebooks/README.md).
+For interactive tutorials, see the [Livebook gallery](../docs/livebooks/README.md).

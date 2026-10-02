@@ -18,7 +18,7 @@ interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
 ## Features
 
 - **Zarr v3 and v2 Support** - Full implementation of both specifications with automatic version detection
-- **High Performance** - 26x faster multi-chunk reads with near-optimal scaling (see [Performance Guide](guides/performance.md))
+- **High Performance** - 26x faster multi-chunk reads with near-optimal scaling (see [Performance Guide](docs/guides/performance.md))
 - **N-dimensional arrays** with support for 10 data types (int8-64, uint8-64, float32/64)
 - **BEAM-native streaming** - `stream_chunks/2`, `stream_slices/3`, and `write_stream/3` for bounded-memory processing
 - **Telemetry** - `:telemetry` events for chunk I/O and stream lifecycle (`ExZarr.Telemetry`)
@@ -104,7 +104,7 @@ array
 |> Enum.each(fn {_start, row} -> process_row(row) end)
 ```
 
-Attach telemetry handlers for production observability - see [guides/telemetry.md](guides/telemetry.md).
+Attach telemetry handlers for production observability - see [docs/guides/telemetry.md](docs/guides/telemetry.md).
 
 ```elixir
 ExZarr.Array.write_stream(array, chunk_stream,
@@ -130,7 +130,7 @@ ExZarr v0.8+ includes major performance optimizations:
 - After: 4.2ms per read
 - **Speedup: 26×**
 
-See [Performance Guide](guides/performance.md) for tuning recommendations and [Benchmarks](benchmarks/README.md) for running your own tests.
+See [Performance Guide](docs/guides/performance.md) for tuning recommendations and [Benchmarks](benchmarks/README.md) for running your own tests.
 
 ```bash
 # Run quick performance check (completes in 6 seconds)
@@ -794,20 +794,20 @@ These tests verify that:
 
 Comprehensive guides for all skill levels:
 
-- **[What is Zarr?](guides/what_is_zarr.md)** — format overview
-- **[Introduction](guides/introduction.md)** — create, write, and read in minutes
+- **[What is Zarr?](docs/guides/what_is_zarr.md)** — format overview
+- **[Quick Start](#quick-start)** — create, write, read, save/open, and streaming
   - Installation and basic concepts
   - Creating and opening arrays
   - Reading and writing data
-  - Choosing chunk sizes
+  - Streaming large arrays
   - Common patterns and best practices
-- **[Advanced Usage](guides/performance.md)** - Deep dive into advanced features
+- **[Advanced Usage](docs/guides/performance.md)** - Deep dive into advanced features
   - Zarr v3 features (sharding, dimension names, codec pipeline)
   - Custom chunk grids (regular and irregular)
   - Cloud storage optimization (S3, GCS, Azure)
   - Performance tuning and profiling
   - Custom storage backends and codecs
-- **[Migration from Python](guides/python_interop.md)** - For zarr-python users
+- **[Migration from Python](docs/guides/python_interop.md)** - For zarr-python users
   - API comparison and translation guide
   - Data structure differences (NumPy arrays vs nested tuples)
   - Converting between Python and Elixir

@@ -108,7 +108,7 @@ large-scale array processing on the BEAM.
 - `docs/architecture_review.md`, `docs/gap_analysis.md`, `docs/v1_1_design.md`
 - `docs/cloud_storage_patterns.md`
 - `docs/cookbook/` starter recipes for large-array workflows
-- `livebooks/broadway_pipeline.livemd`, `livebooks/nx_streaming.livemd`
+- `docs/livebooks/broadway_pipeline.livemd`, `docs/livebooks/nx_streaming.livemd`
 - `docs/release_notes_v1_1_0.md`, `docs/migration_guide_v1_1_0.md`
 
 #### Benchmarks
@@ -165,12 +165,12 @@ ExZarr 1.0.0 marks the first production-ready release with comprehensive testing
   - All high/medium confidence warnings resolved
   - 45 low-confidence warnings documented as expected behavior
   - Detailed explanation of file traversal, String.to_atom, and configuration warnings
-- **Enhanced Error Handling Guide**: `guides/error_handling.md`
+- **Enhanced Error Handling Guide**: `docs/guides/error_handling.md`
   - Comprehensive error handling patterns
   - Recovery strategies for common failures
   - Circuit breaker and retry patterns
   - Logging and debugging recommendations
-- **Telemetry Guide**: `guides/telemetry.md`
+- **Telemetry Guide**: `docs/guides/telemetry.md`
   - Complete instrumentation documentation
   - Integration examples for monitoring systems
   - Performance metrics and event tracking
@@ -183,7 +183,7 @@ ExZarr 1.0.0 marks the first production-ready release with comprehensive testing
   - Zero `mix docs` warnings
   - All public functions have `@doc` annotations
   - All modules have `@moduledoc` annotations
-  - Comprehensive guides in `guides/` directory
+  - Comprehensive guides in `docs/guides/` directory
 
 ### Changed
 
