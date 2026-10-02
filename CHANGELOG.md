@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 
 ### Added
+- Precompiled Zig NIFs for `ExZarr.Codecs.ZigCodecs` via ZiglerPrecompiled
+  (Linux/macOS x86_64 + aarch64); see `PRECOMPILATION.md`
 - Optional storage backend callbacks: `chunk_info/2`, `read_chunk_range/4`,
   conditional `read_chunk_range/5` (`if_match:`), `capabilities/1`, `put_layout/2`
 - `ExZarr.Storage.ObjectKeys` for centralized v2/v3 object naming, including

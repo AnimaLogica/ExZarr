@@ -103,7 +103,7 @@ defmodule ExZarr.ChunkStreamingTest do
       # Stream in parallel
       chunks =
         array
-        |> Array.chunk_stream(parallel: 4)
+        |> Array.chunk_stream(concurrency: 4)
         |> Enum.to_list()
 
       # Verify we got all chunks
@@ -140,7 +140,7 @@ defmodule ExZarr.ChunkStreamingTest do
       # Stream with ordered: true
       chunks_ordered =
         array
-        |> Array.chunk_stream(parallel: 4, ordered: true)
+        |> Array.chunk_stream(concurrency: 4, ordered: true)
         |> Enum.to_list()
 
       indices_ordered = Enum.map(chunks_ordered, fn {index, _data} -> index end)
@@ -148,7 +148,7 @@ defmodule ExZarr.ChunkStreamingTest do
       # Stream with ordered: false for comparison
       chunks_unordered =
         array
-        |> Array.chunk_stream(parallel: 4, ordered: false)
+        |> Array.chunk_stream(concurrency: 4, ordered: false)
         |> Enum.to_list()
 
       indices_unordered = Enum.map(chunks_unordered, fn {index, _data} -> index end)
@@ -370,7 +370,7 @@ defmodule ExZarr.ChunkStreamingTest do
       # Stream chunks without collecting them all - use sequential mode for constant memory
       chunk_count =
         array
-        |> Array.chunk_stream(parallel: 1)
+        |> Array.chunk_stream(concurrency: 1)
         |> Stream.take(50)
         |> Enum.reduce(0, fn _chunk, acc ->
           # Process and immediately discard each chunk to ensure GC

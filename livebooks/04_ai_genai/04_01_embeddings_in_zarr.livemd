@@ -1,10 +1,17 @@
-# ExZarr 04.01 — Embeddings in Zarr (chunked vectors + similarity scan)
+# ExZarr - Embeddings in Zarr (chunked vectors + similarity scan)
+
+```elixir
+Mix.install([{:ex_zarr, path: Path.join(__DIR__, "../..")}])
+```
+
+## Section
 
 This is a **no-network** GenAI-style tutorial:
-- we generate a tiny corpus
-- compute toy embeddings (hashing trick)
-- store them in ExZarr
-- do a cosine similarity “search” by scanning chunks
+
+* we generate a tiny corpus
+* compute toy embeddings (hashing trick)
+* store them in ExZarr
+* do a cosine similarity “search” by scanning chunks
 
 > In a real system you would swap in a true embedding model or an API call.
 
@@ -13,7 +20,8 @@ This is a **no-network** GenAI-style tutorial:
 ## Setup
 
 ```elixir
-Mix.install([{:ex_zarr, path: ".."}])
+
+
 
 alias ExZarr.Array
 alias ExZarr.Gallery.{Pack, SampleData, Metrics}
@@ -151,7 +159,7 @@ end
 
 {scored, us} =
   Metrics.time(fn ->
-    Array.chunk_stream(a, parallel: 4, ordered: false)
+    Array.chunk_stream(a, concurrency: 4, ordered: false)
     |> Enum.flat_map(score_chunk)
   end)
 
@@ -175,14 +183,14 @@ scores =
 
 ## 5) Notes for “real” embeddings
 
-- Replace `embed/1` with a real encoder (Nx model, Bumblebee, a local GGUF model, or an API call).
-- Store doc ids + offsets in:
-  - sidecar JSON (simple), or
-  - a parallel Zarr array (e.g., fixed-size uint64 ids), or
-  - a dataset layout convention (group with arrays + attrs).
+* Replace `embed/1` with a real encoder (Nx model, Bumblebee, a local GGUF model, or an API call).
+* Store doc ids + offsets in:
+  * sidecar JSON (simple), or
+  * a parallel Zarr array (e.g., fixed-size uint64 ids), or
+  * a dataset layout convention (group with arrays + attrs).
 
 ---
 
 ## Next
 
-- Finance: `livebooks/05_finance/05_01_tick_data_cube.livemd`
+* Finance: `livebooks/05_finance/05_01_tick_data_cube.livemd`

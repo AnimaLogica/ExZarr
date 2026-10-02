@@ -140,6 +140,31 @@ defmodule ExZarr.ArrayExtendedTest do
       assert reopened.chunks == {10, 20}
       assert reopened.dtype == :int32
     end
+
+    test "saves memory array to path and reopens with data" do
+      path = Path.join(@test_dir, "memory_to_disk")
+
+      {:ok, array} =
+        Array.create(
+          shape: {20, 20},
+          chunks: {10, 10},
+          dtype: :int32,
+          compressor: :zlib,
+          storage: :memory
+        )
+
+      data = for i <- 1..100, into: <<>>, do: <<i::32-signed-native>>
+      assert :ok = Array.set_slice(array, data, start: {0, 0}, stop: {10, 10})
+
+      File.rm_rf!(path)
+      assert :ok = Array.save(array, path: path)
+      assert File.exists?(Path.join(path, ".zarray"))
+
+      assert {:ok, reopened} = Array.open(path: path)
+      assert reopened.shape == {20, 20}
+      assert {:ok, bin} = Array.get_slice(reopened, start: {0, 0}, stop: {10, 10})
+      assert bin == data
+    end
   end
 
   describe "Array validation" do

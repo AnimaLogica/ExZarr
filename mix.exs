@@ -66,7 +66,10 @@ defmodule ExZarr.MixProject do
       # JSON encoding/decoding for metadata
       {:jason, "~> 1.4"},
 
-      # Zig NIFs for compression codecs
+      # Zig NIFs: zigler required until precompiled checksums ship (Mix.install /
+      # path deps do not pull optional deps). After checksum-*.exs is published,
+      # zigler can become optional: true again for Hex-only consumers.
+      {:zigler_precompiled, "~> 0.1.6"},
       {:zigler, "~> 0.16", runtime: false},
 
       # Cloud storage backends (optional)
@@ -123,11 +126,13 @@ defmodule ExZarr.MixProject do
         "Zarr Specification" => "https://zarr.dev"
       },
       maintainers: ["Thanos Vassilakis"],
+      # Zigler regenerates this ignored intermediate during source builds.
+      exclude_patterns: ["lib/ex_zarr/codecs/.Elixir.ExZarr.Codecs.ZigCodecs.zig"],
       files: [
         "lib",
-        # Only include NIFs, not PLTs
-        "priv/lib",
         "native",
+        "checksum-*.exs",
+        "PRECOMPILATION.md",
         ".formatter.exs",
         "mix.exs",
         "README.md",

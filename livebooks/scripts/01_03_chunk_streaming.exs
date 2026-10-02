@@ -135,13 +135,13 @@ IO.puts("\nElapsed: #{Metrics.human_us(elapsed_us)}")
 
 # ── Step 4: Parallel Streaming Basics ──
 
-# Parallel streaming reads multiple chunks concurrently. Specify `parallel: N` to read up to N chunks at once.
+# Parallel streaming reads multiple chunks concurrently. Specify `concurrency: N` to read up to N chunks at once.
 
 IO.puts("Parallel streaming (4 concurrent chunks):\n")
 
 {chunks_info, elapsed_us} =
   Metrics.time(fn ->
-    Array.chunk_stream(array, parallel: 4, ordered: false)
+    Array.chunk_stream(array, concurrency: 4, ordered: false)
     |> Stream.take(10)
     |> Enum.map(fn {chunk_index, chunk_binary} ->
       %{
@@ -174,7 +174,7 @@ IO.puts("Parallel streaming with ordering (4 concurrent chunks):\n")
 
 {chunks_info, elapsed_us} =
   Metrics.time(fn ->
-    Array.chunk_stream(array, parallel: 4, ordered: true)
+    Array.chunk_stream(array, concurrency: 4, ordered: true)
     |> Stream.take(10)
     |> Enum.map(fn {chunk_index, _chunk_binary} ->
       chunk_index
@@ -200,7 +200,7 @@ IO.puts("Elapsed: #{Metrics.human_us(elapsed_us)}")
 
 # ── Step 6: Bounded Concurrency ──
 
-# Unbounded parallelism can overwhelm memory or network connections. Use `parallel: N` to limit concurrent chunk reads.
+# Unbounded parallelism can overwhelm memory or network connections. Use `concurrency: N` to limit concurrent chunk reads.
 
 concurrency_levels = [1, 2, 4, 8]
 
@@ -210,7 +210,7 @@ results =
   Enum.map(concurrency_levels, fn n ->
     {_chunks, elapsed_us} =
       Metrics.time(fn ->
-        Array.chunk_stream(array, parallel: n, ordered: false)
+        Array.chunk_stream(array, concurrency: n, ordered: false)
         |> Stream.take(50)
         |> Enum.map(fn {_index, binary} -> byte_size(binary) end)
       end)
@@ -245,7 +245,7 @@ end
 
 {count, elapsed_us} =
   Metrics.time(fn ->
-    Array.chunk_stream(array, parallel: 4, progress_callback: progress_fn)
+    Array.chunk_stream(array, concurrency: 4, progress_callback: progress_fn)
     |> Enum.count()
   end)
 
@@ -265,7 +265,7 @@ IO.puts("Processing only chunks in first two rows (chunks 0-19):\n")
 
 {filtered_count, elapsed_us} =
   Metrics.time(fn ->
-    Array.chunk_stream(array, parallel: 4)
+    Array.chunk_stream(array, concurrency: 4)
     |> Stream.filter(fn {{row, _col}, _binary} -> row < 2 end)
     |> Enum.count()
   end)

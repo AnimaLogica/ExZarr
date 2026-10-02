@@ -161,7 +161,7 @@ ExZarr provides `chunk_stream/2` for convenient parallel processing:
 ```elixir
 # Stream all chunks in parallel
 array
-|> ExZarr.Array.chunk_stream(parallel: 4)
+|> ExZarr.Array.chunk_stream(concurrency: 4)
 |> Stream.each(fn {chunk_index, chunk_data} ->
   process_chunk(chunk_index, chunk_data)
 end)
@@ -189,7 +189,7 @@ results = array
 ```elixir
 # Process 100 chunks with progress updates
 ExZarr.Array.chunk_stream(array,
-  parallel: 8,
+  concurrency: 8,
   progress_callback: fn done, total ->
     IO.write("\rProcessed #{done}/#{total} chunks")
   end
@@ -855,9 +855,7 @@ Should I parallelize this operation?
 
 ### Example 1: Parallel Data Export
 
-Export array to multiple CSV files in parallel:
-
-```elixir
+Export array to multiple CSV files in concurrency: ```elixir
 defmodule DataExporter do
   def export_to_csv(array, output_dir) do
     # Get all chunk coordinates
@@ -905,9 +903,7 @@ DataExporter.export_to_csv(array, "/tmp/export")
 
 ### Example 2: Parallel Data Ingestion from S3
 
-Read data from S3 and write to ExZarr array in parallel:
-
-```elixir
+Read data from S3 and write to ExZarr array in concurrency: ```elixir
 defmodule S3Ingestion do
   def ingest_from_s3(bucket, prefix, target_array) do
     # List all source files in S3
@@ -941,9 +937,7 @@ end
 
 ### Example 3: Parallel Statistical Analysis
 
-Compute statistics across chunks in parallel:
-
-```elixir
+Compute statistics across chunks in concurrency: ```elixir
 defmodule ParallelStats do
   def compute_statistics(array) do
     # Process all chunks in parallel

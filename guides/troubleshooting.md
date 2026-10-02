@@ -444,7 +444,7 @@ Process.info(self(), :memory) |> elem(1) |> div(1024 * 1024)
 
    # Stream chunks (constant memory)
    array
-   |> ExZarr.Array.chunk_stream(parallel: 1)
+   |> ExZarr.Array.chunk_stream(concurrency: 1)
    |> Stream.each(&process_chunk/1)
    |> Stream.run()
    ```

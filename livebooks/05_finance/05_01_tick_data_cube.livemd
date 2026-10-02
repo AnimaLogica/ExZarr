@@ -1,12 +1,18 @@
-# ExZarr 05.01 — Finance: tick data cube (time × symbol × field)
+# ExZarr - Finance: tick data cube (time × symbol × field)
+
+```elixir
+Mix.install([{:ex_zarr, path: Path.join(__DIR__, "../..")}])
+```
+
+## Section
 
 We’ll generate synthetic tick data and store it as a 3D array:
 
 `shape = {T, S, F}`
 
-- `T`: ticks (time index)
-- `S`: symbols
-- `F`: fields (price, size, bid, ask)
+* `T`: ticks (time index)
+* `S`: symbols
+* `F`: fields (price, size, bid, ask)
 
 Then we’ll compute OHLC and VWAP using **chunk streaming** and **parallel chunk maps**.
 
@@ -15,8 +21,6 @@ Then we’ll compute OHLC and VWAP using **chunk streaming** and **parallel chun
 ## Setup
 
 ```elixir
-Mix.install([{:ex_zarr, path: ".."}])
-
 alias ExZarr.Array
 alias ExZarr.Gallery.{Pack, Metrics}
 ```
@@ -129,7 +133,7 @@ end
 
 {final, us} =
   Metrics.time(fn ->
-    Array.chunk_stream(cube, parallel: 4, ordered: true)
+    Array.chunk_stream(cube, concurrency: 4, ordered: true)
     |> Enum.reduce(init_stats, fn {_chunk_index, chunk_bin}, stats ->
       floats = Pack.unpack(chunk_bin, :float64)
 
@@ -219,6 +223,6 @@ reduced =
 
 ## Next ideas
 
-- Order book snapshots (4D arrays)
-- Risk grids (scenario × factor × portfolio)
-- Crypto cross-venue OHLCV cubes (venue × symbol × time × field)
+* Order book snapshots (4D arrays)
+* Risk grids (scenario × factor × portfolio)
+* Crypto cross-venue OHLCV cubes (venue × symbol × time × field)

@@ -92,7 +92,7 @@ Now `vals` is a flat list (row-major).
 Chunk streaming is where Zarr starts to feel “cloud native”: you can process an array without loading it all.
 
 ```elixir
-ExZarr.Array.chunk_stream(a, parallel: 4, ordered: false)
+ExZarr.Array.chunk_stream(a, concurrency: 4, ordered: false)
 |> Stream.each(fn {chunk_index, bin} ->
   # do something with each chunk
   :ok

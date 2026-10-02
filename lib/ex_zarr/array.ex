@@ -320,31 +320,78 @@ defmodule ExZarr.Array do
   end
 
   @doc """
-  Saves the array metadata to storage.
+  Saves the array to storage.
 
-  Writes the array configuration to a `.zarray` file in the storage location.
-  This persists the array structure, allowing it to be reopened later.
-  Note that chunk data is written separately when chunks are modified.
+  When `:path` is provided, persists metadata **and** all chunk data to a
+  filesystem directory at that path (including arrays that were created with
+  `:memory` storage). Without `:path`, writes metadata to the array's current
+  storage backend only.
 
   ## Options
 
-  - `:path` - Path where metadata should be written (for new filesystem storage)
+  - `:path` - Directory to write a Zarr array to (creates `.zarray` / `zarr.json`
+    and copies chunks). Required for persisting in-memory arrays.
 
   ## Examples
 
       {:ok, array} = ExZarr.Array.create(shape: {1000}, chunks: {100})
       :ok = ExZarr.Array.save(array, path: "/tmp/my_array")
 
+      {:ok, reopened} = ExZarr.Array.open(path: "/tmp/my_array")
+
   ## Returns
 
   - `:ok` on success
-  - `{:ok, storage}` for in-memory storage (returns updated storage)
   - `{:error, reason}` on failure
   """
   @spec save(t(), keyword()) :: :ok | {:error, term()}
   def save(array, opts) do
-    Storage.write_metadata(array.storage, array.metadata, opts)
+    case Keyword.fetch(opts, :path) do
+      {:ok, path} when is_binary(path) and path != "" ->
+        persist_to_filesystem(array, path, opts)
+
+      {:ok, _} ->
+        {:error, :invalid_path}
+
+      :error ->
+        Storage.write_metadata(array.storage, array.metadata, opts)
+    end
   end
+
+  defp persist_to_filesystem(array, path, opts) do
+    same_filesystem? =
+      array.storage.backend == :filesystem and array.storage.path == path
+
+    if same_filesystem? do
+      Storage.write_metadata(array.storage, array.metadata, opts)
+    else
+      with {:ok, dest} <-
+             Storage.init(%{
+               storage_type: :filesystem,
+               path: path,
+               use_file_locks: Keyword.get(opts, :use_file_locks, true)
+             }),
+           dest = Storage.put_layout(dest, storage_layout(array.metadata)),
+           :ok <- Storage.write_metadata(dest, array.metadata, []),
+           {:ok, chunk_indices} <- Storage.list_chunks(array.storage),
+           :ok <- copy_chunks(array.storage, dest, chunk_indices) do
+        :ok
+      end
+    end
+  end
+
+  defp copy_chunks(_source, _dest, []), do: :ok
+
+  defp copy_chunks(source, dest, [chunk_index | rest]) do
+    with {:ok, data} <- Storage.read_chunk(source, chunk_index),
+         :ok <- normalize_write_result(Storage.write_chunk(dest, chunk_index, data)) do
+      copy_chunks(source, dest, rest)
+    end
+  end
+
+  defp normalize_write_result(:ok), do: :ok
+  defp normalize_write_result({:ok, _storage}), do: :ok
+  defp normalize_write_result({:error, _} = error), do: error
 
   # Parse slice options - supports both numeric (:start, :stop, :step), maps, and named dimensions
   defp parse_slice_options(array, opts) do
@@ -2330,7 +2377,7 @@ defmodule ExZarr.Array do
     ordered = Keyword.get(opts, :ordered, true)
 
     array
-    |> chunk_stream(parallel: 1)
+    |> chunk_stream(concurrency: 1)
     |> Task.async_stream(mapper_fn,
       max_concurrency: max_concurrency,
       timeout: timeout,
@@ -2647,16 +2694,17 @@ defmodule ExZarr.Array do
       results =
         Enum.zip(chunks, indices)
         |> Enum.map(fn {chunk_data, index} ->
-          # Version-aware codec encoding
-          with {:ok, compressed} <- apply_codec_pipeline_encode(array, chunk_data) do
-            Storage.write_chunk(array.storage, index, compressed)
+          with {:ok, compressed} <- apply_codec_pipeline_encode(array, chunk_data),
+               :ok <-
+                 normalize_write_result(Storage.write_chunk(array.storage, index, compressed)) do
+            :ok
           end
         end)
 
-      if Enum.all?(results, &(&1 == :ok)) do
-        :ok
-      else
-        {:error, :write_failed}
+      case Enum.find(results, &(&1 != :ok)) do
+        nil -> :ok
+        {:error, _} = error -> error
+        other -> {:error, {:write_failed, other}}
       end
     after
       # Release locks

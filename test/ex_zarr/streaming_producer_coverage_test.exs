@@ -37,7 +37,7 @@ defmodule ExZarr.StreamingProducerCoverageTest do
 
   test "slice_init/demand drains remaining slices", %{array: array} do
     state = Producer.slice_init(array, 0, [])
-    assert length(state.remaining) > 0
+    assert Enum.empty?(state.remaining) == false
 
     {events, state2} = Producer.slice_demand(1, state)
     assert length(events) == 1

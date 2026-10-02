@@ -781,7 +781,7 @@ array
 
 # Streams chunks (constant memory)
 array
-|> ExZarr.Array.chunk_stream(parallel: 1)  # Sequential for minimum memory
+|> ExZarr.Array.chunk_stream(concurrency: 1)  # Sequential for minimum memory
 |> Stream.each(fn {_index, chunk_data} ->
      process_chunk(chunk_data)
      # chunk_data can be GC'd after processing
@@ -1144,7 +1144,7 @@ Benchee.run(
   time: 10,              # 10 seconds per benchmark
   memory_time: 2,        # 2 seconds memory measurement
   warmup: 2,             # 2 second warmup
-  parallel: 1,           # Sequential (not parallel benchmarking)
+  concurrency: 1,           # Sequential (not parallel benchmarking)
   formatters: [
     Benchee.Formatters.Console,
     {Benchee.Formatters.HTML, file: "benchmark_results.html"}
@@ -1232,7 +1232,7 @@ Quick reference for common scenarios.
 - **Budget formula**: concurrency × chunk_size × 2 (safety factor)
 - **Monitor**: Use :observer during development
 - **Test with**: Production data sizes, not toy examples
-- **Streaming**: Use chunk_stream(parallel: 1) for constant memory
+- **Streaming**: Use chunk_stream(concurrency: 1) for constant memory
 
 ### Testing
 

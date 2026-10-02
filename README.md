@@ -655,7 +655,9 @@ assert_received {:mock_storage, :write_chunk, _}
 ExZarr uses:
 
 - **Erlang :zlib** for zlib/gzip compression
-- **Zig NIFs** (`ExZarr.Codecs.ZigCodecs`) for zstd, lz4, snappy, blosc, bzip2, and crc32c
+- **Zig NIFs** (`ExZarr.Codecs.ZigCodecs`) for zstd, lz4, snappy, blosc, bzip2, and crc32c —
+  Hex/Livebook installs use **precompiled** artifacts (Zig not required); see
+  [`PRECOMPILATION.md`](PRECOMPILATION.md)
 - **GenServer** for array state management
 - **Lazy streams** (`Stream.resource/3`, `Task.async_stream/3`) for bounded-memory chunk I/O
 - **Optional pipeline modules** (`ExZarr.Flow`, `ExZarr.GenStage`, `ExZarr.Broadway`) for backpressure and fault tolerance
@@ -667,8 +669,9 @@ ExZarr uses:
 
 ## Development
 
-Requires **Elixir ~> 1.17**, **OTP 25+**, and **Zig 0.16.0** for codec NIF compilation (via zigler 0.16).
-Install compression libraries before compiling:
+Requires **Elixir ~> 1.17** and **OTP 25+**. Codec NIFs are **precompiled** for
+published Hex releases (no Zig needed). Local/source builds need **Zig 0.16.0**
+(via zigler) and system compression libraries:
 
 ```bash
 # macOS
@@ -682,7 +685,7 @@ sudo apt-get install libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-de
 # Install dependencies
 mix deps.get
 
-# Compile the project (requires zig 0.16 on PATH)
+# Compile (dev/test force a Zig source build; or EX_ZARR_BUILD=1)
 mix compile
 
 # Run tests

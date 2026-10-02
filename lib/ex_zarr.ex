@@ -237,14 +237,14 @@ defmodule ExZarr do
   @doc """
   Saves an array to filesystem storage.
 
-  Writes the array metadata to a `.zarray` file in the specified directory.
-  The array structure and configuration will be persisted, allowing it to be
-  reopened later with `open/1`. Note that chunk data is written separately
-  when chunks are modified.
+  When `:path` is given, writes metadata and all chunk data to that directory
+  (works for in-memory arrays as well as other backends). Without `:path`,
+  writes metadata to the array's current storage only.
 
   ## Options
 
-  - `:path` - Path where the array should be saved (required)
+  - `:path` - Path where the array should be saved (required to persist
+    memory-backed arrays)
 
   ## Examples
 

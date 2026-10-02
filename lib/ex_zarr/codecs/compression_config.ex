@@ -10,6 +10,7 @@ defmodule ExZarr.Codecs.CompressionConfig do
   You can override the automatic detection by setting these environment variables:
 
   - `COMPRESSION_LIB_DIRS` - Colon-separated list of library directories
+  - `COMPRESSION_INCLUDE_DIRS` - Colon-separated list of header include directories
   - `HOMEBREW_PREFIX` - Override Homebrew installation path (macOS only)
 
   ## Examples
@@ -17,6 +18,10 @@ defmodule ExZarr.Codecs.CompressionConfig do
       # Get library directories for linking
       ExZarr.Codecs.CompressionConfig.library_dirs()
       # => ["/opt/homebrew/opt/zstd/lib", "/opt/homebrew/opt/lz4/lib", ...]
+
+      # Get include directories for C headers (needed by Livebook.app / GUI PATH)
+      ExZarr.Codecs.CompressionConfig.include_dirs()
+      # => ["/opt/homebrew/opt/zstd/include", "/opt/homebrew/opt/lz4/include", ...]
 
       # Get library paths for runtime (rpaths)
       ExZarr.Codecs.CompressionConfig.rpath_dirs()
@@ -31,7 +36,7 @@ defmodule ExZarr.Codecs.CompressionConfig do
   - **macOS (ARM)**: Uses `/opt/homebrew` prefix by default
   - **macOS (Intel)**: Uses `/usr/local` prefix by default
   - **Linux**: Uses standard system library paths
-  - **Custom**: Set `COMPRESSION_LIB_DIRS` environment variable
+  - **Custom**: Set `COMPRESSION_LIB_DIRS` / `COMPRESSION_INCLUDE_DIRS`
   """
 
   @compression_libs [:zstd, :lz4, :snappy, :"c-blosc", :bzip2]
@@ -44,6 +49,19 @@ defmodule ExZarr.Codecs.CompressionConfig do
   def library_dirs do
     case System.get_env("COMPRESSION_LIB_DIRS") do
       nil -> detect_library_dirs()
+      paths -> String.split(paths, ":")
+    end
+  end
+
+  @doc """
+  Returns the list of include directories for compression C headers.
+
+  Required so Zig `@cImport` / translate-c can find Homebrew headers when
+  `pkg-config` is unavailable (common for Livebook.app with a minimal PATH).
+  """
+  def include_dirs do
+    case System.get_env("COMPRESSION_INCLUDE_DIRS") do
+      nil -> detect_include_dirs()
       paths -> String.split(paths, ":")
     end
   end
@@ -114,6 +132,24 @@ defmodule ExZarr.Codecs.CompressionConfig do
     end
   end
 
+  defp detect_include_dirs do
+    case :os.type() do
+      {:unix, :darwin} ->
+        prefix = detect_homebrew_prefix()
+        build_include_paths(prefix)
+
+      {:unix, _} ->
+        [
+          "/usr/include",
+          "/usr/local/include"
+        ]
+        |> Enum.filter(&File.dir?/1)
+
+      _ ->
+        []
+    end
+  end
+
   defp detect_rpath_dirs do
     case :os.type() do
       {:unix, :darwin} ->
@@ -132,34 +168,54 @@ defmodule ExZarr.Codecs.CompressionConfig do
   end
 
   defp detect_homebrew_prefix do
-    # Try to detect from `brew --prefix`
-    case System.cmd("brew", ["--prefix"], stderr_to_stdout: true) do
-      {prefix, 0} ->
-        String.trim(prefix)
+    # Prefer env / known brew binaries so Livebook.app (minimal PATH) still works
+    brew_bins = [
+      System.find_executable("brew"),
+      "/opt/homebrew/bin/brew",
+      "/usr/local/bin/brew"
+    ]
 
-      _ ->
-        # Fall back to architecture-based detection
-        case :erlang.system_info(:system_architecture) do
-          arch when is_list(arch) ->
-            arch_str = List.to_string(arch)
+    brew_bins
+    |> Enum.find(&(&1 && File.regular?(&1)))
+    |> case do
+      nil ->
+        architecture_homebrew_prefix()
 
-            if String.contains?(arch_str, "aarch64") or String.contains?(arch_str, "arm64") do
-              "/opt/homebrew"
-            else
-              "/usr/local"
-            end
-
-          _ ->
-            "/opt/homebrew"
+      brew ->
+        case System.cmd(brew, ["--prefix"], stderr_to_stdout: true) do
+          {prefix, 0} -> String.trim(prefix)
+          _ -> architecture_homebrew_prefix()
         end
     end
   rescue
-    _ -> "/opt/homebrew"
+    _ -> architecture_homebrew_prefix()
+  end
+
+  defp architecture_homebrew_prefix do
+    case :erlang.system_info(:system_architecture) do
+      arch when is_list(arch) ->
+        arch_str = List.to_string(arch)
+
+        if String.contains?(arch_str, "aarch64") or String.contains?(arch_str, "arm64") do
+          "/opt/homebrew"
+        else
+          "/usr/local"
+        end
+
+      _ ->
+        "/opt/homebrew"
+    end
   end
 
   defp build_lib_paths(prefix) do
     Enum.map(@compression_libs, fn lib ->
       "#{prefix}/opt/#{lib}/lib"
     end)
+  end
+
+  defp build_include_paths(prefix) do
+    @compression_libs
+    |> Enum.map(fn lib -> "#{prefix}/opt/#{lib}/include" end)
+    |> Enum.filter(&File.dir?/1)
   end
 end

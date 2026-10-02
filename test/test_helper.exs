@@ -13,8 +13,6 @@
 #
 # To run live cloud/Python tests locally:
 #   mix test --include s3 --include gcs --include azure --include mongo --include mnesia --include python
-ExUnit.configure(
-  exclude: [:s3, :gcs, :azure, :mongo, :mnesia, :python, :python_fixtures]
-)
+ExUnit.configure(exclude: [:s3, :gcs, :azure, :mongo, :mnesia, :python, :python_fixtures])
 
 ExUnit.start()

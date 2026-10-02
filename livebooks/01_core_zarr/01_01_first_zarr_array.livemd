@@ -1,20 +1,25 @@
-# ExZarr 01.01 — Your first Zarr array (create → write → read → stream → save → open)
+# ExZarr - Your first Zarr array (create → write → read → stream → save → open)
+
+```elixir
+Mix.install([
+  {:ex_zarr, "~> 1.2"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../..")}
+])
+```
+
+## Intro
 
 This Livebook is designed to run **inside the ExZarr repo**.
 
 If you opened it from `livebooks/01_core_zarr/`, it will use the local path dependency:
 
-```elixir
-Mix.install([{:ex_zarr, path: ".."}])
-```
+<!-- livebook:{"break_markdown":true} -->
 
 ---
 
 ## Setup
 
 ```elixir
-Mix.install([{:ex_zarr, path: ".."}])
-
 alias ExZarr.Array
 alias ExZarr.Gallery.{Pack, SampleData, Metrics}
 ```
@@ -31,7 +36,8 @@ We’ll create a `1000x1000` `:int32` array, chunked as `100x100`.
     shape: {1000, 1000},
     chunks: {100, 100},
     dtype: :int32,
-    compressor: :zstd,
+    # zlib uses Erlang :zlib (no Zig NIF). Swap to :zstd once system libs load in Livebook.
+    compressor: :zlib,
     storage: :memory
   )
 
@@ -55,7 +61,7 @@ data = Pack.pack(Enum.to_list(1..100), :int32)
     stop: {10, 10}
   )
 
-:ok
+# :ok
 ```
 
 ---
@@ -132,7 +138,7 @@ progress =
 
 {count, us} =
   Metrics.time(fn ->
-    Array.chunk_stream(a, parallel: 4, ordered: false, progress_callback: progress)
+    Array.chunk_stream(a, concurrency: 4, ordered: false, progress_callback: progress)
     |> Stream.take(50)
     |> Enum.count()
   end)
@@ -175,5 +181,5 @@ Pack.unpack(bin, :int32)
 
 ## Next
 
-- AI / GenAI: `livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd`
-- Finance: `livebooks/05_finance/05_01_tick_data_cube.livemd`
+* AI / GenAI: `livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd`
+* Finance: `livebooks/05_finance/05_01_tick_data_cube.livemd`

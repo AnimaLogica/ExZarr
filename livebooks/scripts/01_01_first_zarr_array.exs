@@ -199,7 +199,7 @@ end
 {count, elapsed_us} =
   Metrics.time(fn ->
     Array.chunk_stream(array,
-      parallel: 4,
+      concurrency: 4,
       ordered: false,
       progress_callback: progress_callback
     )
@@ -211,7 +211,7 @@ IO.puts("\nStreamed #{count} chunks in parallel in #{Metrics.human_us(elapsed_us
 
 # **Parallel streaming:** Requests up to 4 chunks simultaneously. `ordered: false` means chunks can arrive in any order, maximizing throughput.
 
-# **When to use parallel:** Remote storage, large chunk counts, or when processing is faster than I/O.
+# **When to use concurrency: ** Remote storage, large chunk counts, or when processing is faster than I/O.
 
 # ── Step 7: Save to Disk ──
 

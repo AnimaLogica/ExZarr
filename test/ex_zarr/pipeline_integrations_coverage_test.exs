@@ -24,7 +24,7 @@ defmodule ExZarr.PipelineIntegrationsCoverageTest do
       |> Flow.map(fn {_start, data} -> byte_size(data) end)
       |> Enum.to_list()
 
-    assert length(sizes) >= 1
+    assert Enum.empty?(sizes) == false
     assert Enum.all?(sizes, &(&1 > 0))
   end
 
@@ -45,7 +45,7 @@ defmodule ExZarr.PipelineIntegrationsCoverageTest do
     events = Agent.get(agent, &Enum.reverse/1)
     Agent.stop(agent)
 
-    assert length(events) >= 1
+    assert Enum.empty?(events) == false
     refute Process.alive?(producer)
   end
 
