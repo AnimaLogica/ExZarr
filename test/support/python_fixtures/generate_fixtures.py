@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Generate compact ExZarr interoperability fixtures."""
+"""Generate compact zarr-python fixtures for ExZarr interoperability tests.
+
+Writes one store per fixture under --out plus a manifest.json recording the
+zarr-python version and, per fixture, the expected shape, dtype and SHA-256
+of the C-order little-endian array bytes. Any failure exits non-zero so CI
+cannot silently lose coverage.
+"""
 
 from __future__ import annotations
 
@@ -10,84 +16,90 @@ import sys
 from pathlib import Path
 
 import numpy as np
-
-
-def zarr_version() -> str:
-    import zarr
-
-    return zarr.__version__
+import zarr
 
 
 def write_v2(out: Path) -> list[dict]:
-    import zarr
-
-    fixtures = []
     path = out / "v2_float64_2d"
-    path.mkdir(parents=True, exist_ok=True)
     data = np.arange(20, dtype="float64").reshape(4, 5)
     arr = zarr.open(str(path), mode="w", shape=data.shape, chunks=(2, 5), dtype="float64")
     arr[:] = data
-    fixtures.append(meta_entry("v2_float64_2d", path, data))
-    return fixtures
+    return [entry("v2_float64_2d", path, data)]
 
 
 def write_v3(out: Path) -> list[dict]:
-    import zarr
+    from zarr.codecs import BytesCodec, Crc32cCodec, ShardingCodec
 
     fixtures = []
 
-    # scalar 0-D
-    p = out / "v3_scalar"
-    p.mkdir(parents=True, exist_ok=True)
-    arr = zarr.open(str(p), mode="w", shape=(), chunks=(), dtype="float32", zarr_format=3)
+    path = out / "v3_scalar"
+    arr = zarr.create_array(str(path), shape=(), dtype="float32", zarr_format=3)
     arr[()] = np.float32(3.5)
-    fixtures.append(meta_entry("v3_scalar", p, np.array(3.5, dtype="float32")))
+    fixtures.append(entry("v3_scalar", path, np.array(3.5, dtype="float32")))
 
-    # zero-length axis
-    p = out / "v3_zero_len"
-    p.mkdir(parents=True, exist_ok=True)
+    path = out / "v3_zero_len"
     data = np.zeros((0, 4), dtype="int32")
-    arr = zarr.open(str(p), mode="w", shape=data.shape, chunks=(1, 4), dtype="int32", zarr_format=3)
-    fixtures.append(meta_entry("v3_zero_len", p, data))
+    zarr.create_array(str(path), shape=data.shape, chunks=(1, 4), dtype="int32", zarr_format=3)
+    fixtures.append(entry("v3_zero_len", path, data))
 
-    # sharded if available
-    try:
-        from zarr.codecs import BytesCodec, sharding
+    # Default sharding: inner chunks 2x2 in one 4x4 shard, index at end with crc32c.
+    path = out / "v3_sharded"
+    data = np.arange(16, dtype="int32").reshape(4, 4)
+    arr = zarr.create_array(
+        str(path), shape=data.shape, chunks=(2, 2), shards=(4, 4), dtype="int32", zarr_format=3
+    )
+    arr[:] = data
+    fixtures.append(entry("v3_sharded", path, data))
 
-        p = out / "v3_sharded"
-        p.mkdir(parents=True, exist_ok=True)
-        data = np.arange(16, dtype="int32").reshape(4, 4)
-        # Prefer high-level API when present
-        arr = zarr.create_array(
-            str(p),
-            shape=data.shape,
-            chunks=(2, 2),
-            dtype="int32",
-            zarr_format=3,
-            shards=(4, 4),
-        )
-        arr[:] = data
-        fixtures.append(meta_entry("v3_sharded", p, data))
-    except Exception as exc:  # noqa: BLE001
-        fixtures.append(
-            {
-                "name": "v3_sharded",
-                "skipped": True,
-                "reason": str(exc),
-            }
-        )
+    # Index at start, uncompressed inner chunks, several shards and a partial
+    # edge shard (shape not a multiple of the shard shape).
+    path = out / "v3_sharded_index_start"
+    data = np.arange(6 * 10, dtype="float64").reshape(6, 10)
+    sharding = ShardingCodec(
+        chunk_shape=(2, 2),
+        codecs=[BytesCodec(endian="little")],
+        index_codecs=[BytesCodec(endian="little"), Crc32cCodec()],
+        index_location="start",
+    )
+    arr = zarr.create_array(
+        str(path),
+        shape=data.shape,
+        chunks=(4, 4),
+        dtype="float64",
+        zarr_format=3,
+        serializer=sharding,
+        compressors=None,
+    )
+    arr[:] = data
+    fixtures.append(entry("v3_sharded_index_start", path, data))
+
+    # Big-endian inner chunks: the bytes codec must swap byte order.
+    path = out / "v3_sharded_big_endian"
+    data = (np.arange(12, dtype="int32").reshape(3, 4) * 1000) + 7
+    sharding = ShardingCodec(chunk_shape=(2, 2), codecs=[BytesCodec(endian="big")])
+    arr = zarr.create_array(
+        str(path),
+        shape=data.shape,
+        chunks=(4, 4),
+        dtype="int32",
+        zarr_format=3,
+        serializer=sharding,
+        compressors=None,
+    )
+    arr[:] = data
+    fixtures.append(entry("v3_sharded_big_endian", path, data))
 
     return fixtures
 
 
-def meta_entry(name: str, path: Path, data: np.ndarray) -> dict:
-    digest = hashlib.sha256(np.ascontiguousarray(data).tobytes()).hexdigest()
+def entry(name: str, path: Path, data: np.ndarray) -> dict:
+    little = np.ascontiguousarray(data).astype(data.dtype.newbyteorder("<"))
     return {
         "name": name,
-        "path": str(path.name),
+        "path": path.name,
         "shape": list(data.shape),
         "dtype": str(data.dtype),
-        "sha256": digest,
+        "sha256": hashlib.sha256(little.tobytes()).hexdigest(),
     }
 
 
@@ -96,12 +108,16 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--zarr-major", type=int, choices=[2, 3], required=True)
     args = parser.parse_args()
-    args.out.mkdir(parents=True, exist_ok=True)
 
-    version = zarr_version()
+    installed_major = int(zarr.__version__.split(".")[0])
+    if installed_major != args.zarr_major:
+        print(f"zarr {zarr.__version__} installed but --zarr-major {args.zarr_major}", file=sys.stderr)
+        return 1
+
+    args.out.mkdir(parents=True, exist_ok=True)
     fixtures = write_v2(args.out) if args.zarr_major == 2 else write_v3(args.out)
     manifest = {
-        "zarr_python_version": version,
+        "zarr_python_version": zarr.__version__,
         "zarr_major": args.zarr_major,
         "fixtures": fixtures,
     }

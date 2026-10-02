@@ -291,23 +291,46 @@ defmodule ExZarr.Codecs.PipelineV3 do
 
   # Apply array→bytes codec
   @doc false
-  defp apply_array_to_bytes_encode(data, codec, _opts) do
-    # The "bytes" codec is typically a no-op for encoding in Elixir
-    # since we already have binary data. Just pass through.
+  # ExZarr keeps array data little-endian in memory. The "bytes" codec only
+  # changes the data when the stored order is big-endian.
+  defp apply_array_to_bytes_encode(data, codec, opts) do
     case codec.name do
-      "bytes" -> {:ok, data}
+      "bytes" -> apply_endian(data, codec, opts)
       _ -> {:error, {:unsupported_array_to_bytes_codec, codec.name}}
     end
   end
 
   @doc false
-  defp apply_array_to_bytes_decode(data, codec, _opts) do
-    # The "bytes" codec is typically a no-op for decoding
+  defp apply_array_to_bytes_decode(data, codec, opts) do
     case codec.name do
-      "bytes" -> {:ok, data}
+      "bytes" -> apply_endian(data, codec, opts)
       _ -> {:error, {:unsupported_array_to_bytes_codec, codec.name}}
     end
   end
+
+  # Byte-swapping is its own inverse, so encode and decode share it.
+  defp apply_endian(data, codec, opts) do
+    config = Map.get(codec, :configuration) || %{}
+    endian = Map.get(config, :endian) || Map.get(config, "endian") || "little"
+    itemsize = Keyword.get(opts, :itemsize, 1)
+
+    cond do
+      endian == "little" or itemsize <= 1 ->
+        {:ok, data}
+
+      endian != "big" ->
+        {:error, {:invalid_endian, endian}}
+
+      rem(byte_size(data), itemsize) != 0 ->
+        {:error, {:invalid_chunk_size, %{itemsize: itemsize, bytes: byte_size(data)}}}
+
+      true ->
+        {:ok, for(<<item::binary-size(^itemsize) <- data>>, into: <<>>, do: reverse_bytes(item))}
+    end
+  end
+
+  defp reverse_bytes(item),
+    do: item |> :binary.bin_to_list() |> Enum.reverse() |> :binary.list_to_bin()
 
   # Apply bytes→bytes codecs in forward order
   @doc false
@@ -492,7 +515,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
         for byte_pos <- 0..(elementsize - 1), into: <<>> do
           for elem_idx <- 0..(num_elements - 1), into: <<>> do
             offset = elem_idx * elementsize + byte_pos
-            <<_::binary-size(offset), byte::8, _::binary>> = data
+            <<_::binary-size(^offset), byte::8, _::binary>> = data
             <<byte>>
           end
         end
@@ -513,7 +536,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
         for elem_idx <- 0..(num_elements - 1), into: <<>> do
           for byte_pos <- 0..(elementsize - 1), into: <<>> do
             offset = byte_pos * num_elements + elem_idx
-            <<_::binary-size(offset), byte::8, _::binary>> = data
+            <<_::binary-size(^offset), byte::8, _::binary>> = data
             <<byte>>
           end
         end
@@ -532,7 +555,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
       {:ok, data}
     else
       # Store first element as-is, then differences
-      <<first::binary-size(itemsize), rest::binary>> = data
+      <<first::binary-size(^itemsize), rest::binary>> = data
 
       deltas =
         rest
@@ -745,7 +768,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
         input_flat_idx = multi_to_flat_index(input_multi_idx, original_strides)
         # Extract element from input position
         offset = input_flat_idx * itemsize
-        <<_::binary-size(offset), element::binary-size(itemsize), _::binary>> = data
+        <<_::binary-size(^offset), element::binary-size(^itemsize), _::binary>> = data
         element
       end
 
@@ -824,7 +847,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
         for i <- 0..(num_elements - 1), into: <<>> do
           offset_bytes = i * source_itemsize
 
-          <<_::binary-size(offset_bytes), element::binary-size(source_itemsize), _::binary>> =
+          <<_::binary-size(^offset_bytes), element::binary-size(^source_itemsize), _::binary>> =
             data
 
           float_val = parse_float(element, source_dtype)
@@ -853,7 +876,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
         for i <- 0..(num_elements - 1), into: <<>> do
           offset_bytes = i * source_itemsize
 
-          <<_::binary-size(offset_bytes), element::binary-size(source_itemsize), _::binary>> =
+          <<_::binary-size(^offset_bytes), element::binary-size(^source_itemsize), _::binary>> =
             data
 
           int_val = parse_int(element, source_dtype)
@@ -923,7 +946,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
       rounded =
         for i <- 0..(num_elements - 1), into: <<>> do
           offset_bytes = i * itemsize
-          <<_::binary-size(offset_bytes), element::binary-size(itemsize), _::binary>> = data
+          <<_::binary-size(^offset_bytes), element::binary-size(^itemsize), _::binary>> = data
           round_mantissa_bits(element, dtype, keepbits)
         end
 

@@ -114,18 +114,33 @@ Read compressed chunk bytes by coordinate. Return `{:error, :not_found}` if chun
 Implement these to enable range-aware sharded reads without downloading full objects:
 
 ```elixir
-@optional_callbacks chunk_info: 2, read_chunk_range: 4, capabilities: 1
+@optional_callbacks chunk_info: 2, read_chunk_range: 4, read_chunk_range: 5,
+                    capabilities: 1, put_layout: 2
 
 @callback chunk_info(state, chunk_index) ::
-  {:ok, %{size: non_neg_integer(), etag: String.t() | nil}} | {:error, term()}
+  {:ok, %{size: non_neg_integer(), etag: term() | nil}} | {:error, term()}
 
 @callback read_chunk_range(state, chunk_index, offset, length) ::
   {:ok, binary()} | {:error, term()}
 
-@callback capabilities(state) :: map()
+# Conditional variant: with `if_match: etag` (the etag from chunk_info/2),
+# return {:error, :precondition_failed} if the object changed.
+@callback read_chunk_range(state, chunk_index, offset, length, opts :: keyword()) ::
+  {:ok, binary()} | {:error, term()}
+
+# A MapSet or a list of atoms, e.g. MapSet.new([:range_read]) or [:range_read].
+@callback capabilities(state) :: MapSet.t() | [atom()]
+
+# Called on create/open with %{zarr_format: 2 | 3, chunk_key_encoding: map | nil}.
+# Implement it if your backend builds Zarr object keys itself
+# (see ExZarr.Storage.ObjectKeys); return the updated state.
+@callback put_layout(state, layout) :: state
 ```
 
 Use `ExZarr.Storage.Backend.supports?(backend, state, :range_read)` to detect support.
+Return exactly `length` bytes from a range read; ExZarr validates the size.
+When `chunk_info/2` returns an `:etag`, ExZarr passes it to every range of one
+shard read so a concurrent rewrite is detected and the read retried.
 Backends that omit these callbacks continue to work via full `read_chunk/2`.
 
 **5. `write_chunk/3` - Write chunk data**

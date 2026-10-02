@@ -12,7 +12,7 @@ Elixir implementation of [Zarr](https://zarr.dev): compressed, chunked, N-dimens
 
 **Zarr v3.1 core support:** ExZarr implements Zarr v2 and Zarr core v3.1 for the
 documented dtype/codec subset, with automatic version detection and Python
-interop tested against zarr-python 2.x / 3.2 / 3.3 / 3.4. See
+interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
 [ZARR_V3_STATUS.md](ZARR_V3_STATUS.md) for details and known limitations.
 
 ## Features
@@ -553,7 +553,7 @@ ExZarr includes several pre-built storage backends for cloud services and databa
 ```elixir
 # Add dependencies
 {:goth, "~> 1.4"},
-{:req, "~> 0.4"}
+{:req, "~> 0.6.1"}
 
 # Register and use
 :ok = ExZarr.Storage.Registry.register(ExZarr.Storage.Backend.GCS)
@@ -667,7 +667,7 @@ ExZarr uses:
 
 ## Development
 
-Requires **Elixir ~> 1.14**, **OTP 25+**, and **Zig 0.16.0** for codec NIF compilation (via zigler 0.16).
+Requires **Elixir ~> 1.17**, **OTP 25+**, and **Zig 0.16.0** for codec NIF compilation (via zigler 0.16).
 Install compression libraries before compiling:
 
 ```bash

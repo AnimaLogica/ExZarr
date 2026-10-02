@@ -3,9 +3,9 @@
 ## TL;DR
 
 ExZarr implements Zarr v2 and **Zarr core v3.1** for the documented core
-dtype/codec subset. Interoperability is tested against zarr-python **2.x** and
-**3.2 / 3.3 / 3.4** via the Python fixture/CI matrix (see
-`test/support/python_fixtures/`).
+dtype/codec subset. Interoperability is tested in CI, in both directions,
+against zarr-python **2.18.3** and **3.2.1 / 3.3.0 / 3.4.0** (fixtures in
+`test/support/python_fixtures/`, plus the `:python` suites).
 
 ## Production Status
 
@@ -14,13 +14,13 @@ dtype/codec subset. Interoperability is tested against zarr-python **2.x** and
 | **Zarr v3.1 core metadata** | Supported | Scalars, zero-length dims, dim names, extensions |
 | **Unified Codec Pipeline** | Supported | Core codecs + Zig NIF compressors |
 | **v3 Metadata Format** | Supported | `zarr.json` |
-| **Chunk key encoding** | Supported | Default `c/` hierarchy |
-| **Automatic Version Detection** | Supported | Filesystem and cloud backends |
-| **Python Interoperability** | Tested subset | Matrix for 2.x / 3.2 / 3.3 / 3.4 |
+| **Chunk key encoding** | Supported | `default` and `v2`, `/` or `.` separator |
+| **Automatic Version Detection** | Supported | Filesystem and cloud backends (probes `zarr.json`, then `.zarray`) |
+| **Python Interoperability** | Tested subset | CI matrix: 2.18.3 / 3.2.1 / 3.3.0 / 3.4.0 |
 | **Dimension Names** | Spec-aligned | Arbitrary JSON strings / null |
-| **sharding_indexed v1.0** | Supported | Dense index + sentinel; range-aware reads |
+| **sharding_indexed v1.0** | Supported | Spec geometry, index at start/end, `crc32c`; range-aware reads; read and written by zarr-python |
 | **storage_transformers** | Metadata only | Parsed/preserved; execution deferred |
-| **Cloud range reads** | Supported | Optional backend capability |
+| **Cloud range reads** | Supported | S3, GCS, Azure; version-pinned per shard read |
 
 ## Known unsupported / deferred
 

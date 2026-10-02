@@ -389,8 +389,8 @@ mix deps.tree
 **Key Dependencies:**
 - `jason` - JSON parsing (ensure latest for security patches)
 - `ex_aws` / `ex_aws_s3` - AWS integration
-- `google_api_storage` - GCS integration
-- `req` - HTTP client
+- `goth` / `req` - GCS integration (HTTP)
+- `req` - HTTP client (also used by Azure SDK)
 
 ## Security Features in ExZarr
 

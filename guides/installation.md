@@ -7,14 +7,14 @@ This guide covers installing ExZarr, setting up the Zig toolchain for high-perfo
 ### Required Software
 
 **Elixir and Erlang/OTP:**
-- Elixir 1.14 or later
+- Elixir 1.17 or later
 - Erlang/OTP 25 or later
 
 Check your versions:
 ```bash
 elixir --version
 # Erlang/OTP 25 [erts-13.0] [source] [64-bit] [smp:8:8] [ds:8:8:10]
-# Elixir 1.14.0 (compiled with Erlang/OTP 25)
+# Elixir 1.17.0 (compiled with Erlang/OTP 26)
 ```
 
 These versions are required because ExZarr uses modern Elixir features and requires OTP 25+ for certain BEAM capabilities.
@@ -75,7 +75,7 @@ def deps do
   [
     {:ex_zarr, "~> 1.0"},
     {:goth, "~> 1.4"},      # Authentication
-    {:req, "~> 0.4"}        # HTTP client
+    {:req, "~> 0.6.1"}      # HTTP client
   ]
 end
 ```
@@ -483,8 +483,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        elixir: ['1.14', '1.15', '1.16']
-        otp: ['25', '26', '27']
+        elixir: ['1.17', '1.18', '1.19']
+        otp: ['26', '27', '28']
 
     steps:
     - uses: actions/checkout@v3

@@ -56,12 +56,21 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   ## S3 Structure
 
-  Arrays are stored with the following key structure:
+  Keys follow `ExZarr.Storage.ObjectKeys`. Zarr v2 arrays:
   ```
   s3://bucket/prefix/.zarray           # Metadata
   s3://bucket/prefix/0.0               # Chunk at index (0, 0)
-  s3://bucket/prefix/0.1               # Chunk at index (0, 1)
   ```
+
+  Zarr v3 arrays (default chunk key encoding):
+  ```
+  s3://bucket/prefix/zarr.json         # Metadata
+  s3://bucket/prefix/c/0/0             # Chunk at index (0, 0)
+  ```
+
+  The version is taken from `:zarr_format` / `:zarr_version` in the config and
+  updated from the array metadata on create/open. Opening probes both
+  `zarr.json` and `.zarray`.
 
   ## Performance Considerations
 
@@ -81,23 +90,25 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @behaviour ExZarr.Storage.Backend
 
+  alias ExZarr.Storage.ObjectKeys
+
   @impl true
   def backend_id, do: :s3
 
   @impl true
   def init(config) do
-    with {:ok, bucket} <- fetch_required(config, :bucket) do
-      prefix = Keyword.get(config, :prefix, "")
+    with {:ok, bucket} <- fetch_required(config, :bucket),
+         {:ok, layout} <- ObjectKeys.config_layout(config) do
       region = Keyword.get(config, :region, "us-east-1")
       endpoint_url = Keyword.get(config, :endpoint_url) || System.get_env("AWS_ENDPOINT_URL")
 
-      state = %{
-        bucket: bucket,
-        prefix: prefix,
-        region: region,
-        zarr_format: Keyword.get(config, :zarr_format, 2),
-        ex_aws_config: build_ex_aws_config(region, endpoint_url)
-      }
+      state =
+        Map.merge(layout, %{
+          bucket: bucket,
+          prefix: Keyword.get(config, :prefix, ""),
+          region: region,
+          ex_aws_config: build_ex_aws_config(region, endpoint_url)
+        })
 
       {:ok, state}
     end
@@ -109,9 +120,14 @@ defmodule ExZarr.Storage.Backend.S3 do
     init(config)
   end
 
+  @doc false
+  @impl true
+  def put_layout(state, layout),
+    do: Map.merge(state, Map.take(layout, [:zarr_format, :chunk_key_encoding]))
+
   @impl true
   def read_chunk(state, chunk_index) do
-    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    key = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case ex_aws_s3().get_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
       {:ok, %{body: body}} ->
@@ -127,7 +143,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def write_chunk(state, chunk_index, data) do
-    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    key = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case ex_aws_s3().put_object(state.bucket, key, data)
          |> ex_aws().request(state.ex_aws_config) do
@@ -141,29 +157,21 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def read_metadata(state) do
-    key = ExZarr.Storage.ObjectKeys.metadata_key(state.prefix, state.zarr_format)
-
-    case ex_aws_s3().get_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
-      {:ok, %{body: body}} ->
-        {:ok, body}
-
-      {:error, {:http_error, 404, _}} ->
-        {:error, :not_found}
-
-      {:error, reason} ->
-        {:error, {:s3_error, reason}}
-    end
+    state.prefix
+    |> ObjectKeys.metadata_keys(state.zarr_format)
+    |> Enum.reduce_while({:error, :not_found}, fn key, _acc ->
+      case ex_aws_s3().get_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
+        {:ok, %{body: body}} -> {:halt, {:ok, body}}
+        {:error, {:http_error, 404, _}} -> {:cont, {:error, :not_found}}
+        {:error, reason} -> {:halt, {:error, {:s3_error, reason}}}
+      end
+    end)
   end
 
   @impl true
   def write_metadata(state, metadata, _opts) when is_binary(metadata) do
-    version =
-      case Jason.decode(metadata) do
-        {:ok, %{"zarr_format" => 3}} -> 3
-        _ -> state.zarr_format
-      end
-
-    key = ExZarr.Storage.ObjectKeys.metadata_key(state.prefix, version)
+    version = ObjectKeys.metadata_version(metadata, state.zarr_format)
+    key = ObjectKeys.metadata_key(state.prefix, version)
 
     case ex_aws_s3().put_object(state.bucket, key, metadata)
          |> ex_aws().request(state.ex_aws_config) do
@@ -177,17 +185,20 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def list_chunks(state) do
-    prefix = ExZarr.Storage.ObjectKeys.list_prefix(state.prefix)
+    prefix = ObjectKeys.list_prefix(state.prefix)
 
     case ex_aws_s3().list_objects_v2(state.bucket, prefix: prefix)
          |> ex_aws().request(state.ex_aws_config) do
       {:ok, %{body: %{contents: objects}}} ->
         chunks =
           objects
-          |> Enum.map(& &1.key)
-          |> Enum.filter(&ExZarr.Storage.ObjectKeys.chunk_key?(&1, state.zarr_format))
           |> Enum.map(
-            &ExZarr.Storage.ObjectKeys.parse_chunk_key(&1, state.prefix, state.zarr_format)
+            &ObjectKeys.parse_chunk_key(
+              &1.key,
+              state.prefix,
+              state.zarr_format,
+              Map.get(state, :chunk_key_encoding)
+            )
           )
           |> Enum.reject(&is_nil/1)
 
@@ -200,7 +211,7 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @impl true
   def delete_chunk(state, chunk_index) do
-    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    key = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case ex_aws_s3().delete_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
       {:ok, _} ->
@@ -232,27 +243,18 @@ defmodule ExZarr.Storage.Backend.S3 do
   @doc false
   @impl true
   def chunk_info(state, chunk_index) do
-    key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    key = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case ex_aws_s3().head_object(state.bucket, key) |> ex_aws().request(state.ex_aws_config) do
       {:ok, %{headers: headers}} ->
         size =
-          headers
-          |> Enum.find_value(fn
-            {"Content-Length", v} -> String.to_integer(v)
-            {"content-length", v} -> String.to_integer(v)
-            _ -> nil
-          end)
-
-        etag =
-          Enum.find_value(headers, fn
-            {"ETag", v} -> v
-            {"etag", v} -> v
-            _ -> nil
-          end)
+          case header(headers, "content-length") do
+            nil -> nil
+            value -> parse_integer(value)
+          end
 
         if is_integer(size) do
-          {:ok, %{size: size, etag: etag}}
+          {:ok, %{size: size, etag: header(headers, "etag")}}
         else
           {:error, {:s3_error, :missing_content_length}}
         end
@@ -267,25 +269,33 @@ defmodule ExZarr.Storage.Backend.S3 do
 
   @doc false
   @impl true
-  def read_chunk_range(state, chunk_index, offset, length)
-      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
-    if length == 0 do
-      {:ok, ""}
-    else
-      key = ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
-      range = "bytes=#{offset}-#{offset + length - 1}"
+  def read_chunk_range(state, chunk_index, offset, length),
+    do: read_chunk_range(state, chunk_index, offset, length, [])
 
-      case ex_aws_s3().get_object(state.bucket, key, headers: [{"range", range}])
-           |> ex_aws().request(state.ex_aws_config) do
-        {:ok, %{body: body}} ->
-          {:ok, body}
+  @doc false
+  @impl true
+  def read_chunk_range(state, chunk_index, offset, length, opts)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length > 0 do
+    key = ObjectKeys.state_chunk_key(state, chunk_index)
 
-        {:error, {:http_error, 404, _}} ->
-          {:error, :not_found}
+    # ExAws.S3.get_object/3 only forwards known option keys (:range, :if_match, ...)
+    request_opts =
+      [range: "bytes=#{offset}-#{offset + length - 1}"]
+      |> maybe_put(:if_match, Keyword.get(opts, :if_match))
 
-        {:error, reason} ->
-          {:error, {:s3_error, reason}}
-      end
+    case ex_aws_s3().get_object(state.bucket, key, request_opts)
+         |> ex_aws().request(state.ex_aws_config) do
+      {:ok, %{body: body}} ->
+        {:ok, body}
+
+      {:error, {:http_error, 404, _}} ->
+        {:error, :not_found}
+
+      {:error, {:http_error, 412, _}} ->
+        {:error, :precondition_failed}
+
+      {:error, reason} ->
+        {:error, {:s3_error, reason}}
     end
   end
 
@@ -351,6 +361,24 @@ defmodule ExZarr.Storage.Backend.S3 do
 
     config
   end
+
+  defp header(headers, name) do
+    Enum.find_value(headers, fn {key, value} ->
+      if String.downcase(to_string(key)) == name, do: value
+    end)
+  end
+
+  defp parse_integer(value) when is_integer(value), do: value
+
+  defp parse_integer(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   # Allow injection for testing
   defp ex_aws do

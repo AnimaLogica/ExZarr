@@ -8,7 +8,7 @@ defmodule ExZarr.MixProject do
     [
       app: :ex_zarr,
       version: @version,
-      elixir: "~> 1.14",
+      elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: Mix.compilers(),
@@ -36,7 +36,8 @@ defmodule ExZarr.MixProject do
 
   defp aliases do
     [
-      compile: ["compile", "fix_nif_rpaths"]
+      compile: ["compile", "fix_nif_rpaths"],
+      verify: &verify/1
     ]
   end
 
@@ -73,9 +74,9 @@ defmodule ExZarr.MixProject do
       {:ex_aws_s3, "~> 2.5", optional: true},
       {:sweet_xml, "~> 0.7", optional: true},
       {:goth, "~> 1.4", optional: true},
-      {:google_api_storage, "~> 0.36", optional: true},
       {:azure_sdk, "~> 0.4.1", optional: true},
-      {:req, "~> 0.4", optional: true},
+      # override: azure_sdk 0.4.1 still declares req ~> 0.5; CVE-2026-49755 needs >= 0.6.1
+      {:req, "~> 0.6.1", optional: true, override: true},
 
       # Database storage backends (optional)
       {:mongodb_driver, "~> 1.4", optional: true},
@@ -94,6 +95,7 @@ defmodule ExZarr.MixProject do
       # Documentation — no :only: zig_doc (zigler transitive dep) requires ex_doc in prod
       {:ex_doc, "~> 0.39", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:doctor, "~> 0.21", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
@@ -289,4 +291,33 @@ defmodule ExZarr.MixProject do
   end
 
   defp before_closing_body_tag(_), do: ""
+
+  defp verify(_) do
+    steps = [
+      {"compile --warnings-as-errors", :dev},
+      {"format --check-formatted", :dev},
+      {"credo --strict", :dev},
+      # {"doctor --full", :dev},
+      {"sobelow --config", :dev},
+      {"dialyzer", :dev},
+      {"test --cover", :test},
+      {"docs --warnings-as-errors", :dev}
+    ]
+
+    Enum.each(steps, fn {task, env} ->
+      Mix.shell().info([:bright, "==> mix #{task}", :reset])
+
+      {_, exit_code} =
+        System.cmd("mix", String.split(task),
+          env: [{"MIX_ENV", to_string(env)}],
+          into: IO.stream()
+        )
+
+      if exit_code != 0 do
+        Mix.raise("mix #{task} failed (exit code #{exit_code})")
+      end
+    end)
+
+    Mix.shell().info([:green, :bright, "\nAll verification checks passed!", :reset])
+  end
 end

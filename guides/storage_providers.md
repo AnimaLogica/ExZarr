@@ -355,7 +355,7 @@ def deps do
   [
     {:ex_zarr, "~> 1.0"},
     {:goth, "~> 1.4"},      # Authentication
-    {:req, "~> 0.4"}        # HTTP client
+    {:req, "~> 0.6.1"}      # HTTP client
   ]
 end
 ```

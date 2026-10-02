@@ -328,8 +328,20 @@ defmodule ExZarr.Storage.Backend do
 
   @type chunk_info :: %{required(:size) => non_neg_integer(), optional(:etag) => term()}
 
+  @typedoc """
+  Options for conditional range reads.
+
+    * `:if_match` - only read if the object's current etag/version equals this
+      value. Backends return `{:error, :precondition_failed}` otherwise.
+  """
+  @type range_opts :: [if_match: term()]
+
   @doc """
   Optional: returns object size (and optional etag) for a stored chunk/shard.
+
+  When `:etag` is present, ExZarr passes it back as `if_match:` to
+  `read_chunk_range/5` so all ranges of one shard read come from the same
+  object version.
   """
   @callback chunk_info(state(), chunk_index()) :: {:ok, chunk_info()} | {:error, term()}
 
@@ -344,33 +356,64 @@ defmodule ExZarr.Storage.Backend do
             ) :: {:ok, binary()} | {:error, term()}
 
   @doc """
-  Optional: returns backend capabilities such as `:range_read`.
+  Optional: conditional variant of `read_chunk_range/4`. See `t:range_opts/0`.
+  """
+  @callback read_chunk_range(
+              state(),
+              chunk_index(),
+              non_neg_integer(),
+              non_neg_integer(),
+              range_opts()
+            ) :: {:ok, binary()} | {:error, term()}
+
+  @doc """
+  Optional: returns backend capabilities such as `:range_read`, as a `MapSet`
+  or a list of atoms.
   """
   @callback capabilities(state()) :: MapSet.t() | [atom()]
+
+  @typedoc """
+  Object layout of the array stored in a backend, known once metadata exists.
+  """
+  @type layout :: %{zarr_format: 2 | 3, chunk_key_encoding: map() | nil}
+
+  @doc """
+  Optional: updates backend state with the array's object layout.
+
+  Called by `ExZarr.Array.create/1` and `ExZarr.Array.open/1` once the Zarr
+  version and chunk key encoding are known. Backends that build object keys
+  themselves (S3, GCS, Azure) use it to pick `zarr.json` / `c/...` keys.
+  """
+  @callback put_layout(state(), layout()) :: state()
 
   @optional_callbacks [
     chunk_info: 2,
     read_chunk_range: 4,
-    capabilities: 1
+    read_chunk_range: 5,
+    capabilities: 1,
+    put_layout: 2
   ]
 
   @doc """
   Returns whether `backend` advertises `capability` for `state`.
+
+  `capabilities/1` may return a `MapSet` or a list of atoms.
   """
   @spec supports?(module(), state(), atom()) :: boolean()
   def supports?(backend, state, capability) when is_atom(backend) and is_atom(capability) do
+    _ = Code.ensure_loaded(backend)
+
     cond do
       function_exported?(backend, :capabilities, 1) ->
-        caps = backend.capabilities(state)
-
-        cond do
-          is_struct(caps, MapSet) -> MapSet.member?(caps, capability)
-          is_list(caps) -> capability in caps
-          true -> false
+        case backend.capabilities(state) do
+          %MapSet{} = caps -> MapSet.member?(caps, capability)
+          caps when is_list(caps) -> capability in caps
+          _ -> false
         end
 
-      capability == :range_read and function_exported?(backend, :read_chunk_range, 4) ->
-        true
+      capability == :range_read ->
+        function_exported?(backend, :read_chunk_range, 4) or
+          function_exported?(backend, :read_chunk_range, 5)
 
       true ->
         false
@@ -379,27 +422,66 @@ defmodule ExZarr.Storage.Backend do
 
   @doc """
   Reads a byte range, falling back to full `read_chunk/2` + binary slice.
-  """
-  @spec read_range(module(), state(), chunk_index(), non_neg_integer(), non_neg_integer()) ::
-          {:ok, binary()} | {:error, term()}
-  def read_range(backend, state, chunk_index, offset, length)
-      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
-    if supports?(backend, state, :range_read) and
-         function_exported?(backend, :read_chunk_range, 4) do
-      backend.read_chunk_range(state, chunk_index, offset, length)
-    else
-      case backend.read_chunk(state, chunk_index) do
-        {:ok, data} ->
-          if offset + length > byte_size(data) do
-            {:error,
-             {:invalid_chunk_range, %{offset: offset, length: length, size: byte_size(data)}}}
-          else
-            {:ok, binary_part(data, offset, length)}
-          end
 
-        error ->
-          error
-      end
+  Native range responses are validated: a body of exactly `length` bytes is
+  accepted; a longer body is treated as the full object (a server that ignored
+  the Range header) and sliced locally; anything else is an
+  `{:invalid_chunk_range, _}` error.
+  """
+  @spec read_range(
+          module(),
+          state(),
+          chunk_index(),
+          non_neg_integer(),
+          non_neg_integer(),
+          range_opts()
+        ) :: {:ok, binary()} | {:error, term()}
+  def read_range(backend, state, chunk_index, offset, length, opts \\ [])
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
+    cond do
+      length == 0 ->
+        {:ok, ""}
+
+      supports?(backend, state, :range_read) and
+          function_exported?(backend, :read_chunk_range, 5) ->
+        backend.read_chunk_range(state, chunk_index, offset, length, opts)
+        |> validate_range_response(offset, length)
+
+      supports?(backend, state, :range_read) and
+          function_exported?(backend, :read_chunk_range, 4) ->
+        backend.read_chunk_range(state, chunk_index, offset, length)
+        |> validate_range_response(offset, length)
+
+      true ->
+        case backend.read_chunk(state, chunk_index) do
+          {:ok, data} -> slice(data, offset, length)
+          error -> error
+        end
+    end
+  end
+
+  defp validate_range_response({:ok, body}, _offset, length)
+       when is_binary(body) and byte_size(body) == length,
+       do: {:ok, body}
+
+  defp validate_range_response({:ok, body}, offset, length)
+       when is_binary(body) and byte_size(body) > length,
+       do: slice(body, offset, length)
+
+  defp validate_range_response({:ok, body}, offset, length) when is_binary(body) do
+    {:error, {:invalid_chunk_range, %{offset: offset, length: length, received: byte_size(body)}}}
+  end
+
+  defp validate_range_response({:ok, other}, offset, length),
+    do: {:error, {:invalid_chunk_range, %{offset: offset, length: length, body: other}}}
+
+  defp validate_range_response(error, _offset, _length), do: error
+
+  defp slice(data, offset, length) do
+    if offset + length > byte_size(data) do
+      {:error, {:invalid_chunk_range, %{offset: offset, length: length, size: byte_size(data)}}}
+    else
+      {:ok, binary_part(data, offset, length)}
     end
   end
 

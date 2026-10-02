@@ -31,7 +31,7 @@ This allows scientific workflows to span multiple languages while maintaining a 
 
 ExZarr interops with zarr-python. For CI-backed coverage see
 `test/support/python_fixtures/` and the `python-interop` GitHub Actions job
-(zarr 2.x / 3.2 / 3.3 / 3.4).
+(zarr-python 2.18.3 / 3.2.1 / 3.3.0 / 3.4.0, read and write, including sharded v3 arrays).
 
 ### Creating Arrays with ExZarr for Python
 

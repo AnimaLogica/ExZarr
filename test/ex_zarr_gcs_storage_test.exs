@@ -213,7 +213,7 @@ defmodule ExZarr.GCSStorageTest do
       assert true
 
       # To test GCS backend with real Google Cloud:
-      # 1. Install dependencies: {:goth, "~> 1.4"}, {:req, "~> 0.4"}
+      # 1. Install dependencies: {:goth, "~> 1.4"}, {:req, "~> 0.6.1"}
       # 2. Create a service account and download JSON key
       # 3. Set environment variables:
       #    export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"

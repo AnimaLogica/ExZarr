@@ -422,18 +422,16 @@ defmodule ExZarr.MetadataV3 do
         _ -> true
       end
 
-    cond do
-      is_binary(name) ->
-        {:ok,
-         %{
-           name: name,
-           configuration: if(is_map(configuration), do: configuration, else: %{}),
-           must_understand: must_understand,
-           short_form: false
-         }}
-
-      true ->
-        {:error, {:missing_extension_name, ext}}
+    if is_binary(name) do
+      {:ok,
+       %{
+         name: name,
+         configuration: if(is_map(configuration), do: configuration, else: %{}),
+         must_understand: must_understand,
+         short_form: false
+       }}
+    else
+      {:error, {:missing_extension_name, ext}}
     end
   end
 
@@ -1237,43 +1235,55 @@ defmodule ExZarr.MetadataV3 do
           codecs
       end
 
-    # Wrap codecs in sharding if shard_shape is provided
-    codecs =
+    dtype = Map.fetch!(config, :dtype)
+    chunks = Map.fetch!(config, :chunks)
+    base_codecs = ensure_bytes_endian(base_codecs, dtype)
+
+    # `shard_shape:` is the number of inner chunks per shard in each dimension.
+    # Per the sharding spec the chunk grid then holds the shard shape in
+    # elements and the codec's `chunk_shape` is the inner chunk shape.
+    {grid_shape, codecs} =
       case Map.get(config, :shard_shape) do
         nil ->
-          # No sharding
-          base_codecs
+          {chunks, base_codecs}
 
         shard_shape ->
-          # Wrap base codecs in sharding codec
-          # Convert shard_shape to list for JSON encoding
-          chunk_shape_list =
-            if is_tuple(shard_shape), do: Tuple.to_list(shard_shape), else: shard_shape
+          per_shard = if is_list(shard_shape), do: List.to_tuple(shard_shape), else: shard_shape
 
-          index_codecs = Map.get(config, :index_codecs, [%{name: "bytes"}, %{name: "crc32c"}])
-          index_location = Map.get(config, :index_location, "end")
+          grid =
+            chunks
+            |> Tuple.to_list()
+            |> Enum.zip(Tuple.to_list(per_shard))
+            |> Enum.map(fn {c, n} -> c * n end)
+            |> List.to_tuple()
 
-          [
-            %{
-              name: "sharding_indexed",
-              configuration: %{
-                chunk_shape: chunk_shape_list,
-                codecs: base_codecs,
-                index_codecs: index_codecs,
-                index_location: index_location
-              }
+          index_codecs =
+            Map.get(config, :index_codecs, [
+              %{name: "bytes", configuration: %{endian: "little"}},
+              %{name: "crc32c"}
+            ])
+
+          sharding = %{
+            name: "sharding_indexed",
+            configuration: %{
+              chunk_shape: Tuple.to_list(chunks),
+              codecs: base_codecs,
+              index_codecs: index_codecs,
+              index_location: Map.get(config, :index_location, "end")
             }
-          ]
+          }
+
+          {grid, [sharding]}
       end
 
     metadata = %__MODULE__{
       zarr_format: 3,
       node_type: :array,
       shape: Map.fetch!(config, :shape),
-      data_type: DataType.to_v3(Map.fetch!(config, :dtype)),
+      data_type: DataType.to_v3(dtype),
       chunk_grid: %{
         name: "regular",
-        configuration: %{chunk_shape: Map.fetch!(config, :chunks)}
+        configuration: %{chunk_shape: grid_shape}
       },
       chunk_key_encoding: %{name: "default"},
       codecs: codecs,
@@ -1283,5 +1293,61 @@ defmodule ExZarr.MetadataV3 do
     }
 
     {:ok, metadata}
+  end
+
+  # The `bytes` codec must state its endianness for multi-byte data types;
+  # zarr-python rejects metadata without it. ExZarr data is little-endian.
+  # Applies to sharding inner codecs too; the shard index (uint64) always
+  # needs it.
+  defp ensure_bytes_endian(codecs, dtype) when is_list(codecs) do
+    multi_byte? = is_atom(dtype) and DataType.itemsize(dtype) > 1
+    Enum.map(codecs, &put_bytes_endian(&1, multi_byte?))
+  end
+
+  defp ensure_bytes_endian(codecs, _dtype), do: codecs
+
+  defp put_bytes_endian(codec, multi_byte?) when is_map(codec) do
+    case codec_field(codec, :name) do
+      "bytes" when multi_byte? ->
+        update_codec_config(codec, fn config ->
+          if codec_field(config, :endian), do: config, else: put_field(config, :endian, "little")
+        end)
+
+      "sharding_indexed" ->
+        update_codec_config(codec, fn config ->
+          config
+          |> update_field(:codecs, &Enum.map(&1, fn c -> put_bytes_endian(c, multi_byte?) end))
+          |> update_field(:index_codecs, &Enum.map(&1, fn c -> put_bytes_endian(c, true) end))
+        end)
+
+      _ ->
+        codec
+    end
+  end
+
+  defp put_bytes_endian(codec, _multi_byte?), do: codec
+
+  # Codec maps may use atom or string keys; keep whichever the map uses.
+  defp codec_field(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+
+  defp field_key(map, key) do
+    if Map.has_key?(map, Atom.to_string(key)), do: Atom.to_string(key), else: key
+  end
+
+  defp put_field(map, key, value) do
+    string_keys? = map != %{} and Enum.all?(Map.keys(map), &is_binary/1)
+    Map.put(map, if(string_keys?, do: Atom.to_string(key), else: key), value)
+  end
+
+  defp update_field(map, key, fun) do
+    case codec_field(map, key) do
+      list when is_list(list) -> Map.put(map, field_key(map, key), fun.(list))
+      _ -> map
+    end
+  end
+
+  defp update_codec_config(codec, fun) do
+    key = if Map.has_key?(codec, "name"), do: "configuration", else: :configuration
+    Map.put(codec, key, fun.(Map.get(codec, key) || %{}))
   end
 end

@@ -8,6 +8,9 @@ defmodule ExZarr.Storage.AzureBlobMockTest do
       send(self(), {:azure_download, blob_name, opts})
 
       cond do
+        Keyword.get(opts, :if_match) == "stale" ->
+          {:error, %{status: 412, message: "Precondition Failed"}}
+
         String.ends_with?(blob_name, ".zarray") or String.ends_with?(blob_name, "zarr.json") ->
           {:ok, %{content: mock_metadata_json(blob_name), properties: %{}}}
 
@@ -56,6 +59,14 @@ defmodule ExZarr.Storage.AzureBlobMockTest do
     def properties(_client, _container, blob_name, _opts \\ []) do
       send(self(), {:azure_properties, blob_name})
 
+      if String.starts_with?(blob_name, "nolength/") do
+        {:ok, %{etag: "\"etag1\"", metadata: %{}}}
+      else
+        properties_with_length()
+      end
+    end
+
+    defp properties_with_length do
       {:ok,
        %{
          content_length: 8,
@@ -240,10 +251,40 @@ defmodule ExZarr.Storage.AzureBlobMockTest do
     test "chunk_info and read_chunk_range" do
       {:ok, state} = AzureBlob.init(base_config())
       assert {:ok, %{size: 8, etag: "\"etag1\""}} = AzureBlob.chunk_info(state, {0, 0})
+      assert_receive {:azure_properties, "0.0"}
+
       assert {:ok, <<3, 4>>} = AzureBlob.read_chunk_range(state, {0, 0}, 2, 2)
       assert_receive {:azure_download, "0.0", opts}
       assert Keyword.get(opts, :range) == {2, 3}
+      assert Keyword.get(opts, :if_match) == nil
+      # No extra HEAD per range read
+      refute_received {:azure_properties, _}
+    end
+
+    test "conditional range read forwards if_match and maps 412" do
+      {:ok, state} = AzureBlob.init(base_config())
+
+      assert {:ok, <<3, 4>>} =
+               AzureBlob.read_chunk_range(state, {0, 0}, 2, 2, if_match: "\"etag1\"")
+
+      assert_receive {:azure_download, "0.0", opts}
       assert Keyword.get(opts, :if_match) == "\"etag1\""
+
+      assert {:error, :precondition_failed} =
+               AzureBlob.read_chunk_range(state, {0, 0}, 2, 2, if_match: "stale")
+    end
+
+    test "chunk_info without content length is an error" do
+      {:ok, state} = AzureBlob.init(base_config(prefix: "nolength"))
+
+      assert {:error, {:azure_error, :missing_content_length}} =
+               AzureBlob.chunk_info(state, {0, 0})
+    end
+
+    test "state does not retain the account key" do
+      {:ok, state} = AzureBlob.init(base_config())
+      refute Map.has_key?(state, :account_key)
+      refute inspect(state) =~ "account_key"
     end
 
     test "capabilities includes range_read" do

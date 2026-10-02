@@ -13,11 +13,26 @@ duration measurements. Stream start/stop use `:telemetry.execute/3`.
 | `[:ex_zarr, :chunk, :write, :stop]` | `%{duration: native_time, bytes: integer}` | `%{array: ref, chunk_index: tuple}` |
 | `[:ex_zarr, :stream, :start]` | `%{}` | `%{array: ref, type: atom, opts: keyword}` |
 | `[:ex_zarr, :stream, :stop]` | `%{duration: native_time, count: integer}` | `%{array: ref, type: atom}` |
-| `[:ex_zarr, :shard, :range_read]` | `%{bytes_requested, bytes_fetched, range_count}` | `%{fallback: boolean}` |
+| `[:ex_zarr, :shard, :range_read]` | `%{bytes_requested, bytes_fetched, range_count}` | `%{fallback: boolean, fallback_reason: term}` |
 
 `ExZarr.Telemetry.events/0` returns all attachable event names, including
-`:start` and `:exception` variants for chunk spans. Range-read telemetry uses
-low-cardinality metadata only.
+`:start` and `:exception` variants for chunk spans.
+
+`[:ex_zarr, :shard, :range_read]` fires once per shard read of a sharded v3
+array. On the range path `bytes_requested` is the encoded size of the inner
+chunks asked for, `bytes_fetched` adds the shard index, and `range_count`
+counts the range requests (index + inner chunks). When the whole shard is
+downloaded instead, `fallback` is true, `fallback_reason` says why (for example
+`:no_range_support`, or the range error), both byte counts are the shard size,
+and `range_count` is 1.
+
+Range reads are tuned with two application settings:
+
+```elixir
+config :ex_zarr,
+  range_read_concurrency: 4,   # parallel inner-chunk range requests per shard
+  range_read_timeout: 60_000   # per-request timeout in ms
+```
 
 ## Installation
 

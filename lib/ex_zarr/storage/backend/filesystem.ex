@@ -248,8 +248,6 @@ defmodule ExZarr.Storage.Backend.Filesystem do
     end
   end
 
-  ## Private Helpers
-
   @doc false
   @impl true
   def chunk_info(state, chunk_index) do
@@ -307,6 +305,8 @@ defmodule ExZarr.Storage.Backend.Filesystem do
   @doc false
   @impl true
   def capabilities(_state), do: MapSet.new([:range_read])
+
+  ## Private Helpers
 
   defp ensure_directory(path) do
     case File.mkdir_p(path) do

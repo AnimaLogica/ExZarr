@@ -24,7 +24,7 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   ```elixir
   {:goth, "~> 1.4"},
-  {:req, "~> 0.4"}
+  {:req, "~> 0.6.1"}
   ```
 
   ## Authentication
@@ -58,12 +58,21 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   ## GCS Structure
 
-  Arrays are stored with the following object paths:
+  Object names follow `ExZarr.Storage.ObjectKeys`. Zarr v2 arrays:
   ```
   gs://bucket/prefix/.zarray           # Metadata
   gs://bucket/prefix/0.0               # Chunk at index (0, 0)
-  gs://bucket/prefix/0.1               # Chunk at index (0, 1)
   ```
+
+  Zarr v3 arrays (default chunk key encoding):
+  ```
+  gs://bucket/prefix/zarr.json         # Metadata
+  gs://bucket/prefix/c/0/0             # Chunk at index (0, 0)
+  ```
+
+  The version is taken from `:zarr_format` / `:zarr_version` in the config and
+  updated from the array metadata on create/open. Opening probes both
+  `zarr.json` and `.zarray`.
 
   ## Performance Considerations
 
@@ -83,6 +92,8 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   @behaviour ExZarr.Storage.Backend
 
+  alias ExZarr.Storage.ObjectKeys
+
   @base_url "https://storage.googleapis.com/storage/v1"
   @upload_url "https://storage.googleapis.com/upload/storage/v1"
 
@@ -92,20 +103,21 @@ defmodule ExZarr.Storage.Backend.GCS do
   @impl true
   def init(config) do
     with {:ok, bucket} <- fetch_required(config, :bucket),
+         {:ok, layout} <- ObjectKeys.config_layout(config),
          {:ok, goth_name} <- setup_goth(config) do
       prefix = Keyword.get(config, :prefix, "")
       endpoint_url = Keyword.get(config, :endpoint_url) || System.get_env("GCS_ENDPOINT_URL")
 
       {base_url, upload_url} = build_urls(endpoint_url)
 
-      state = %{
-        bucket: bucket,
-        prefix: prefix,
-        goth_name: goth_name,
-        base_url: base_url,
-        upload_url: upload_url,
-        zarr_format: Keyword.get(config, :zarr_format, 2)
-      }
+      state =
+        Map.merge(layout, %{
+          bucket: bucket,
+          prefix: prefix,
+          goth_name: goth_name,
+          base_url: base_url,
+          upload_url: upload_url
+        })
 
       {:ok, state}
     end
@@ -117,18 +129,23 @@ defmodule ExZarr.Storage.Backend.GCS do
     init(config)
   end
 
+  @doc false
+  @impl true
+  def put_layout(state, layout),
+    do: Map.merge(state, Map.take(layout, [:zarr_format, :chunk_key_encoding]))
+
   @impl true
   def read_chunk(state, chunk_index) do
-    object_name =
-      ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    object_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     with {:ok, token} <- get_access_token(state.goth_name) do
       url =
-        "#{state.base_url}/b/#{state.bucket}/o/#{URI.encode(object_name, &URI.char_unreserved?/1)}"
+        "#{state.base_url}/b/#{state.bucket}/o/#{encode_name(object_name)}"
 
       case req().get(url,
              params: [alt: "media"],
-             headers: [{"authorization", "Bearer #{token}"}]
+             headers: [{"authorization", "Bearer #{token}"}],
+             decode_body: false
            ) do
         {:ok, %{status: 200, body: body}} when is_binary(body) ->
           {:ok, body}
@@ -150,8 +167,7 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   @impl true
   def write_chunk(state, chunk_index, data) do
-    object_name =
-      ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    object_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     with {:ok, token} <- get_access_token(state.goth_name) do
       url = "#{state.upload_url}/b/#{state.bucket}/o"
@@ -178,43 +194,47 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   @impl true
   def read_metadata(state) do
-    object_name = ExZarr.Storage.ObjectKeys.metadata_key(state.prefix, state.zarr_format)
-
     with {:ok, token} <- get_access_token(state.goth_name) do
-      url =
-        "#{state.base_url}/b/#{state.bucket}/o/#{URI.encode(object_name, &URI.char_unreserved?/1)}"
+      state.prefix
+      |> ObjectKeys.metadata_keys(state.zarr_format)
+      |> Enum.reduce_while({:error, :not_found}, fn object_name, _acc ->
+        case fetch_metadata_object(state, token, object_name) do
+          {:error, :not_found} -> {:cont, {:error, :not_found}}
+          result -> {:halt, result}
+        end
+      end)
+    end
+  end
 
-      case req().get(url,
-             params: [alt: "media"],
-             headers: [{"authorization", "Bearer #{token}"}]
-           ) do
-        {:ok, %{status: 200, body: body}} when is_binary(body) ->
-          {:ok, body}
+  defp fetch_metadata_object(state, token, object_name) do
+    url = "#{state.base_url}/b/#{state.bucket}/o/#{encode_name(object_name)}"
 
-        {:ok, %{status: 200, body: body}} when is_map(body) ->
-          {:ok, Jason.encode!(body)}
+    case req().get(url,
+           params: [alt: "media"],
+           headers: [{"authorization", "Bearer #{token}"}],
+           decode_body: false
+         ) do
+      {:ok, %{status: 200, body: body}} when is_binary(body) ->
+        {:ok, body}
 
-        {:ok, %{status: 404}} ->
-          {:error, :not_found}
+      {:ok, %{status: 200, body: body}} when is_map(body) ->
+        {:ok, Jason.encode!(body)}
 
-        {:ok, response} ->
-          {:error, {:gcs_error, response.status}}
+      {:ok, %{status: 404}} ->
+        {:error, :not_found}
 
-        {:error, reason} ->
-          {:error, {:gcs_error, reason}}
-      end
+      {:ok, response} ->
+        {:error, {:gcs_error, response.status}}
+
+      {:error, reason} ->
+        {:error, {:gcs_error, reason}}
     end
   end
 
   @impl true
   def write_metadata(state, metadata, _opts) when is_binary(metadata) do
-    version =
-      case Jason.decode(metadata) do
-        {:ok, %{"zarr_format" => 3}} -> 3
-        _ -> state.zarr_format
-      end
-
-    object_name = ExZarr.Storage.ObjectKeys.metadata_key(state.prefix, version)
+    version = ObjectKeys.metadata_version(metadata, state.zarr_format)
+    object_name = ObjectKeys.metadata_key(state.prefix, version)
 
     with {:ok, token} <- get_access_token(state.goth_name) do
       url = "#{state.upload_url}/b/#{state.bucket}/o"
@@ -241,7 +261,7 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   @impl true
   def list_chunks(state) do
-    prefix = ExZarr.Storage.ObjectKeys.list_prefix(state.prefix)
+    prefix = ObjectKeys.list_prefix(state.prefix)
 
     with {:ok, token} <- get_access_token(state.goth_name) do
       url = "#{state.base_url}/b/#{state.bucket}/o"
@@ -253,10 +273,13 @@ defmodule ExZarr.Storage.Backend.GCS do
         {:ok, %{status: 200, body: %{"items" => items}}} when is_list(items) ->
           chunks =
             items
-            |> Enum.map(& &1["name"])
-            |> Enum.filter(&ExZarr.Storage.ObjectKeys.chunk_key?(&1, state.zarr_format))
             |> Enum.map(
-              &ExZarr.Storage.ObjectKeys.parse_chunk_key(&1, state.prefix, state.zarr_format)
+              &ObjectKeys.parse_chunk_key(
+                &1["name"],
+                state.prefix,
+                state.zarr_format,
+                Map.get(state, :chunk_key_encoding)
+              )
             )
             |> Enum.reject(&is_nil/1)
 
@@ -276,12 +299,11 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   @impl true
   def delete_chunk(state, chunk_index) do
-    object_name =
-      ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    object_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     with {:ok, token} <- get_access_token(state.goth_name) do
       url =
-        "#{state.base_url}/b/#{state.bucket}/o/#{URI.encode(object_name, &URI.char_unreserved?/1)}"
+        "#{state.base_url}/b/#{state.bucket}/o/#{encode_name(object_name)}"
 
       case req().delete(url, headers: [{"authorization", "Bearer #{token}"}]) do
         {:ok, %{status: status}} when status in 200..299 or status == 404 ->
@@ -317,28 +339,17 @@ defmodule ExZarr.Storage.Backend.GCS do
   @doc false
   @impl true
   def chunk_info(state, chunk_index) do
-    object_name =
-      ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    object_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     with {:ok, token} <- get_access_token(state.goth_name) do
-      url =
-        "#{state.base_url}/b/#{state.bucket}/o/#{URI.encode(object_name, &URI.char_unreserved?/1)}"
+      url = "#{state.base_url}/b/#{state.bucket}/o/#{encode_name(object_name)}"
 
       case req().get(url, headers: [{"authorization", "Bearer #{token}"}]) do
-        {:ok, %{status: 200, body: body}} when is_map(body) ->
-          size = body["size"] || body["sizeBytes"]
-
-          size =
-            cond do
-              is_integer(size) -> size
-              is_binary(size) -> String.to_integer(size)
-              true -> nil
-            end
-
-          if is_integer(size) do
-            {:ok, %{size: size, etag: body["etag"] || body["generation"]}}
-          else
-            {:error, {:gcs_error, :missing_size}}
+        {:ok, %{status: 200, body: %{} = body}} ->
+          case parse_size(body["size"]) do
+            # The object generation is the version token used for ifGenerationMatch.
+            size when is_integer(size) -> {:ok, %{size: size, etag: body["generation"]}}
+            nil -> {:error, {:gcs_error, :missing_size}}
           end
 
         {:ok, %{status: 404}} ->
@@ -355,39 +366,46 @@ defmodule ExZarr.Storage.Backend.GCS do
 
   @doc false
   @impl true
-  def read_chunk_range(state, chunk_index, offset, length)
-      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
-    if length == 0 do
-      {:ok, ""}
-    else
-      object_name =
-        ExZarr.Storage.ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+  def read_chunk_range(state, chunk_index, offset, length),
+    do: read_chunk_range(state, chunk_index, offset, length, [])
 
-      with {:ok, token} <- get_access_token(state.goth_name) do
-        url =
-          "#{state.base_url}/b/#{state.bucket}/o/#{URI.encode(object_name, &URI.char_unreserved?/1)}"
+  @doc false
+  @impl true
+  def read_chunk_range(state, chunk_index, offset, length, opts)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length > 0 do
+    object_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
-        range = "bytes=#{offset}-#{offset + length - 1}"
+    params =
+      case Keyword.get(opts, :if_match) do
+        nil -> [alt: "media"]
+        generation -> [alt: "media", ifGenerationMatch: generation]
+      end
 
-        case req().get(url,
-               params: [alt: "media"],
-               headers: [
-                 {"authorization", "Bearer #{token}"},
-                 {"range", range}
-               ]
-             ) do
-          {:ok, %{status: status, body: body}} when status in [200, 206] and is_binary(body) ->
-            {:ok, body}
+    with {:ok, token} <- get_access_token(state.goth_name) do
+      url = "#{state.base_url}/b/#{state.bucket}/o/#{encode_name(object_name)}"
 
-          {:ok, %{status: 404}} ->
-            {:error, :not_found}
+      case req().get(url,
+             params: params,
+             headers: [
+               {"authorization", "Bearer #{token}"},
+               {"range", "bytes=#{offset}-#{offset + length - 1}"}
+             ],
+             decode_body: false
+           ) do
+        {:ok, %{status: status, body: body}} when status in [200, 206] and is_binary(body) ->
+          {:ok, body}
 
-          {:ok, response} ->
-            {:error, {:gcs_error, response.status}}
+        {:ok, %{status: 404}} ->
+          {:error, :not_found}
 
-          {:error, reason} ->
-            {:error, {:gcs_error, reason}}
-        end
+        {:ok, %{status: 412}} ->
+          {:error, :precondition_failed}
+
+        {:ok, response} ->
+          {:error, {:gcs_error, response.status}}
+
+        {:error, reason} ->
+          {:error, {:gcs_error, reason}}
       end
     end
   end
@@ -462,6 +480,19 @@ defmodule ExZarr.Storage.Backend.GCS do
       {:error, reason} -> {:error, {:goth_error, reason}}
     end
   end
+
+  defp encode_name(object_name), do: URI.encode(object_name, &URI.char_unreserved?/1)
+
+  defp parse_size(size) when is_integer(size), do: size
+
+  defp parse_size(size) when is_binary(size) do
+    case Integer.parse(size) do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  defp parse_size(_), do: nil
 
   defp build_urls(nil) do
     {@base_url, @upload_url}

@@ -151,13 +151,18 @@ defmodule ExZarr.Array do
     enable_cache = Keyword.get(opts, :enable_cache, false)
 
     with {:ok, config} <- validate_config(opts),
-         {:ok, storage} <- Storage.init(config),
-         {:ok, metadata} <- create_metadata(config, version) do
+         {:ok, storage} <- Storage.init(Map.put(config, :zarr_format, version)),
+         {:ok, metadata} <- create_metadata(config, version),
+         {:ok, chunks} <- io_chunk_shape(metadata, config.chunks) do
+      storage = Storage.put_layout(storage, storage_layout(metadata))
+
       # Build base array
       base_array =
         struct(
           __MODULE__,
           config
+          |> Map.delete(:zarr_format)
+          |> Map.put(:chunks, chunks)
           |> Map.put(:storage, storage)
           |> Map.put(:metadata, metadata)
           |> Map.put(:version, version)
@@ -222,6 +227,52 @@ defmodule ExZarr.Array do
   defp create_metadata(config, 2), do: Metadata.create(config)
   defp create_metadata(config, 3), do: MetadataV3.create(config)
 
+  defp array_layout(%Metadata{} = metadata) do
+    {:ok, 2, metadata.chunks, metadata.dtype, metadata.compressor}
+  end
+
+  defp array_layout(%MetadataV3{} = metadata) do
+    # For v3, compressor is not a single field - set to :none for compatibility
+    with {:ok, dtype} <- v3_dtype(metadata.data_type),
+         {:ok, grid_shape} <- MetadataV3.get_chunk_shape(metadata),
+         {:ok, chunks} <- io_chunk_shape(metadata, grid_shape) do
+      {:ok, 3, chunks, dtype, :none}
+    end
+  end
+
+  # Metadata validation accepts any data type name structurally (extension
+  # types included); opening reports the ones ExZarr cannot operate on.
+  defp v3_dtype(data_type) when is_binary(data_type) do
+    {:ok, ExZarr.DataType.from_v3(data_type)}
+  rescue
+    ArgumentError -> {:error, {:unsupported_data_type, data_type}}
+  end
+
+  defp v3_dtype(data_type), do: {:error, {:unsupported_data_type, data_type}}
+
+  # Object layout the storage backend needs to build keys.
+  defp storage_layout(%MetadataV3{chunk_key_encoding: encoding}),
+    do: %{zarr_format: 3, chunk_key_encoding: encoding}
+
+  defp storage_layout(_metadata), do: %{zarr_format: 2, chunk_key_encoding: nil}
+
+  # The chunk shape ExZarr reads and writes. For sharded v3 arrays the chunk
+  # grid holds the shard shape and I/O happens per inner chunk, matching
+  # zarr-python's `Array.chunks` vs `Array.shards`.
+  defp io_chunk_shape(%MetadataV3{} = metadata, grid_shape) do
+    case sharding_config(metadata) do
+      nil ->
+        {:ok, grid_shape}
+
+      config ->
+        with {:ok, codec} <- ShardingIndexed.init(config, shard_shape: grid_shape) do
+          {:ok, codec.chunk_shape}
+        end
+    end
+  end
+
+  defp io_chunk_shape(_metadata, grid_shape), do: {:ok, grid_shape}
+
   @doc """
   Opens an existing array from storage.
 
@@ -249,21 +300,9 @@ defmodule ExZarr.Array do
   @spec open(keyword()) :: {:ok, t()} | {:error, term()}
   def open(opts) do
     with {:ok, storage} <- Storage.open(opts),
-         {:ok, metadata} <- Storage.read_metadata(storage) do
-      # Auto-detect version from metadata type
-      {version, chunks, dtype, compressor} =
-        case metadata do
-          %Metadata{} ->
-            # v2 metadata
-            {2, metadata.chunks, metadata.dtype, metadata.compressor}
-
-          %MetadataV3{} ->
-            # v3 metadata - extract chunks and dtype
-            {:ok, chunk_shape} = MetadataV3.get_chunk_shape(metadata)
-            dtype = ExZarr.DataType.from_v3(metadata.data_type)
-            # For v3, compressor is not a single field - set to :none for compatibility
-            {3, chunk_shape, dtype, :none}
-        end
+         {:ok, metadata} <- Storage.read_metadata(storage),
+         {:ok, version, chunks, dtype, compressor} <- array_layout(metadata) do
+      storage = Storage.put_layout(storage, storage_layout(metadata))
 
       array = %__MODULE__{
         shape: metadata.shape,
@@ -865,13 +904,13 @@ defmodule ExZarr.Array do
 
   defp apply_stepped_writes_1d(existing, new_data, size, step, element_size) do
     indices = Enum.take_every(0..(size - 1), step)
-    new_elements = for <<elem::binary-size(element_size) <- new_data>>, do: elem
+    new_elements = for <<elem::binary-size(^element_size) <- new_data>>, do: elem
 
     # Build result by replacing elements at stepped indices
     Enum.zip(indices, new_elements)
     |> Enum.reduce(existing, fn {idx, new_elem}, acc ->
       offset = idx * element_size
-      <<before::binary-size(offset), _::binary-size(element_size), after_part::binary>> = acc
+      <<before::binary-size(^offset), _::binary-size(^element_size), after_part::binary>> = acc
       <<before::binary, new_elem::binary, after_part::binary>>
     end)
   end
@@ -882,13 +921,13 @@ defmodule ExZarr.Array do
 
     # Generate all (row, col) pairs in order
     index_pairs = for row <- row_indices, col <- col_indices, do: {row, col}
-    new_elements = for <<elem::binary-size(element_size) <- new_data>>, do: elem
+    new_elements = for <<elem::binary-size(^element_size) <- new_data>>, do: elem
 
     # Build result by replacing elements at stepped indices
     Enum.zip(index_pairs, new_elements)
     |> Enum.reduce(existing, fn {{row, col}, new_elem}, acc ->
       offset = (row * width + col) * element_size
-      <<before::binary-size(offset), _::binary-size(element_size), after_part::binary>> = acc
+      <<before::binary-size(^offset), _::binary-size(^element_size), after_part::binary>> = acc
       <<before::binary, new_elem::binary, after_part::binary>>
     end)
   end
@@ -904,7 +943,7 @@ defmodule ExZarr.Array do
 
     strides = ExZarr.Chunk.calculate_strides(shape)
     index_lists = cartesian_product(ranges)
-    new_elements = for <<elem::binary-size(element_size) <- new_data>>, do: elem
+    new_elements = for <<elem::binary-size(^element_size) <- new_data>>, do: elem
 
     # Build result by replacing elements at stepped indices
     Enum.zip(index_lists, new_elements)
@@ -915,7 +954,7 @@ defmodule ExZarr.Array do
         |> Enum.reduce(0, fn {idx, stride}, a -> a + idx * stride end)
 
       byte_offset = offset * element_size
-      <<before::binary-size(byte_offset), _::binary-size(element_size), after_part::binary>> = acc
+      <<before::binary-size(^byte_offset), _::binary-size(^element_size), after_part::binary>> = acc
       <<before::binary, new_elem::binary, after_part::binary>>
     end)
   end
@@ -2100,6 +2139,9 @@ defmodule ExZarr.Array do
       {:error, :not_found} ->
         fill_chunk = create_fill_chunk(array)
         {index, {:ok, fill_chunk}}
+
+      {:error, reason} ->
+        {index, {:error, reason}}
     end
   end
 
@@ -2370,179 +2412,202 @@ defmodule ExZarr.Array do
   end
 
   defp read_chunks_with_sharding(array, chunk_indices) do
-    sharding_codec = get_sharding_codec(array)
-    concurrency = Application.get_env(:ex_zarr, :range_read_concurrency, 4)
+    with {:ok, codec} <- get_sharding_codec(array),
+         {:ok, shards} <- read_shards(array, chunk_indices, codec) do
+      expected_size = chunk_byte_size(array)
 
-    # Group requested absolute chunks by shard for shared index fetch
-    by_shard =
-      Enum.group_by(chunk_indices, fn chunk_idx ->
-        calculate_shard_index(chunk_idx, sharding_codec.chunk_shape)
-      end)
+      chunk_indices
+      |> Enum.reduce_while({:ok, []}, fn chunk_idx, {:ok, acc} ->
+        shard_idx = calculate_shard_index(chunk_idx, codec.chunks_per_shard)
+        local_idx = to_local_chunk_index(chunk_idx, codec.chunks_per_shard)
 
-    shard_results =
-      Enum.reduce(by_shard, %{}, fn {shard_idx, abs_indices}, acc ->
-        case read_inner_chunks_from_shard(
-               array,
-               shard_idx,
-               abs_indices,
-               sharding_codec,
-               concurrency
-             ) do
-          {:ok, local_map} -> Map.put(acc, shard_idx, local_map)
-          {:error, reason} -> Map.put(acc, shard_idx, {:error, reason})
+        case shards |> Map.fetch!(shard_idx) |> Map.fetch!(local_idx) do
+          :fill ->
+            {:cont, {:ok, [create_fill_chunk(array) | acc]}}
+
+          data when byte_size(data) == expected_size ->
+            {:cont, {:ok, [data | acc]}}
+
+          data ->
+            {:halt,
+             {:error,
+              {:invalid_chunk_size,
+               %{chunk_index: chunk_idx, expected: expected_size, actual: byte_size(data)}}}}
         end
       end)
-
-    chunks =
-      Enum.map(chunk_indices, fn chunk_idx ->
-        shard_idx = calculate_shard_index(chunk_idx, sharding_codec.chunk_shape)
-        local_idx = to_local_chunk_index(chunk_idx, sharding_codec.chunk_shape)
-
-        case Map.get(shard_results, shard_idx) do
-          {:error, reason} ->
-            {:error, reason}
-
-          local_map when is_map(local_map) ->
-            case Map.fetch(local_map, local_idx) do
-              {:ok, :fill} -> {:ok, create_fill_chunk(array)}
-              {:ok, data} -> {:ok, data}
-              :error -> {:ok, create_fill_chunk(array)}
-            end
-
-          _ ->
-            {:error, :read_failed}
-        end
-      end)
-
-    errors = Enum.filter(chunks, &match?({:error, _}, &1))
-
-    if Enum.empty?(errors) do
-      {:ok, Enum.map(chunks, fn {:ok, data} -> data end)}
-    else
-      {:error, :read_failed}
+      |> case do
+        {:ok, chunks} -> {:ok, Enum.reverse(chunks)}
+        error -> error
+      end
     end
   end
 
-  defp read_inner_chunks_from_shard(array, shard_idx, abs_indices, sharding_codec, concurrency) do
-    alias ExZarr.Codecs.ShardingIndexed
-    locals = Enum.map(abs_indices, &to_local_chunk_index(&1, sharding_codec.chunk_shape))
+  defp chunk_byte_size(array) do
+    array.chunks |> Tuple.to_list() |> Enum.reduce(1, &*/2) |> Kernel.*(dtype_size(array.dtype))
+  end
 
+  # Returns %{shard_idx => %{local_idx => decoded_binary | :fill}}.
+  defp read_shards(array, chunk_indices, codec) do
+    chunk_indices
+    |> Enum.group_by(&calculate_shard_index(&1, codec.chunks_per_shard))
+    |> Enum.reduce_while({:ok, %{}}, fn {shard_idx, abs_indices}, {:ok, acc} ->
+      locals =
+        abs_indices
+        |> Enum.map(&to_local_chunk_index(&1, codec.chunks_per_shard))
+        |> Enum.uniq()
+
+      case read_inner_chunks(array, shard_idx, locals, codec) do
+        {:ok, local_map} -> {:cont, {:ok, Map.put(acc, shard_idx, local_map)}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp read_inner_chunks(array, shard_idx, locals, codec) do
     if Storage.supports?(array.storage, :range_read) do
-      with {:ok, info} <- Storage.chunk_info(array.storage, shard_idx),
-           {:ok, {index_offset, index_len}} <-
-             ShardingIndexed.index_byte_range(sharding_codec, info.size),
-           {:ok, index_bin} <-
-             Storage.read_chunk_range(array.storage, shard_idx, index_offset, index_len),
-           {:ok, entries} <- ShardingIndexed.decode_index_bytes(index_bin, sharding_codec) do
-        emit_range_telemetry(array, :index, index_len, false)
+      case read_inner_chunks_ranged(array, shard_idx, locals, codec, 2) do
+        {:fallback, reason} ->
+          read_inner_chunks_full_shard(array, shard_idx, locals, codec, reason)
 
-        ranges =
-          locals
-          |> Enum.map(fn local ->
-            case ShardingIndexed.index_entry(entries, local) do
-              {:ok, {offset, nbytes}} ->
-                if ShardingIndexed.empty_entry?({offset, nbytes}) do
-                  {local, :fill}
-                else
-                  {local, {:range, offset, nbytes}}
-                end
-
-              _ ->
-                {local, :fill}
-            end
-          end)
-
-        fetch_local_ranges(array, shard_idx, ranges, sharding_codec, concurrency)
-      else
-        {:error, :not_found} ->
-          {:ok, Map.new(locals, &{&1, :fill})}
-
-        {:error, reason} ->
-          # Fall back to full shard on range failures
-          read_inner_chunks_full_shard(array, shard_idx, locals, sharding_codec, reason)
+        result ->
+          result
       end
     else
-      read_inner_chunks_full_shard(array, shard_idx, locals, sharding_codec, :no_range)
+      read_inner_chunks_full_shard(array, shard_idx, locals, codec, :no_range_support)
     end
   end
 
-  defp fetch_local_ranges(array, shard_idx, ranges, sharding_codec, concurrency) do
-    alias ExZarr.Codecs.ShardingIndexed
+  # Reads the shard index and only the requested inner chunks. Every range is
+  # conditional on the etag seen by chunk_info, so a concurrent rewrite of the
+  # shard is detected (precondition_failed) and the read is retried instead of
+  # combining offsets from one version with bytes from another.
+  defp read_inner_chunks_ranged(array, shard_idx, locals, codec, attempts) do
+    with {:ok, info} <- Storage.chunk_info(array.storage, shard_idx),
+         range_opts = if_match_opts(info),
+         {:ok, {index_offset, index_len}} <- ShardingIndexed.index_byte_range(codec, info.size),
+         {:ok, index_bin} <-
+           Storage.read_chunk_range(array.storage, shard_idx, index_offset, index_len, range_opts),
+         {:ok, entries} <- ShardingIndexed.decode_index_bytes(index_bin, codec),
+         {:ok, wanted} <- inner_chunk_ranges(entries, locals, info.size),
+         {:ok, payloads} <- fetch_inner_ranges(array, shard_idx, wanted, range_opts) do
+      payload_bytes =
+        Enum.reduce(wanted, 0, fn {_local, {_offset, nbytes}}, sum -> sum + nbytes end)
 
-    to_fetch =
-      Enum.filter(ranges, fn
-        {_local, {:range, _, _}} -> true
-        _ -> false
-      end)
-
-    fetched =
-      to_fetch
-      |> Task.async_stream(
-        fn {local, {:range, offset, nbytes}} ->
-          case Storage.read_chunk_range(array.storage, shard_idx, offset, nbytes) do
-            {:ok, encoded} ->
-              emit_range_telemetry(array, :inner, nbytes, false)
-
-              case ShardingIndexed.decode_chunk_payload(encoded, sharding_codec) do
-                {:ok, decoded} -> {local, decoded}
-                {:error, reason} -> {local, {:error, reason}}
-              end
-
-            {:error, reason} ->
-              {local, {:error, reason}}
-          end
-        end,
-        max_concurrency: max(concurrency, 1),
-        ordered: true,
-        timeout: 60_000
+      emit_shard_read_telemetry(
+        payload_bytes,
+        index_len + payload_bytes,
+        1 + length(wanted),
+        nil
       )
-      |> Enum.reduce_while(%{}, fn
-        {:ok, {_local, {:error, reason}}}, _acc -> {:halt, {:error, reason}}
-        {:ok, {local, data}}, acc -> {:cont, Map.put(acc, local, data)}
-        {:exit, reason}, _acc -> {:halt, {:error, {:task_exit, reason}}}
-      end)
 
-    case fetched do
+      decode_inner_payloads(locals, payloads, codec)
+    else
+      {:error, :not_found} ->
+        {:ok, Map.new(locals, &{&1, :fill})}
+
+      {:error, :precondition_failed} when attempts > 1 ->
+        read_inner_chunks_ranged(array, shard_idx, locals, codec, attempts - 1)
+
       {:error, reason} ->
-        {:error, reason}
-
-      map when is_map(map) ->
-        result =
-          Enum.reduce(ranges, %{}, fn
-            {local, :fill}, acc -> Map.put(acc, local, :fill)
-            {local, {:range, _, _}}, acc -> Map.put(acc, local, Map.fetch!(map, local))
-          end)
-
-        {:ok, result}
+        {:fallback, reason}
     end
   end
 
-  defp read_inner_chunks_full_shard(array, shard_idx, locals, sharding_codec, _reason) do
-    alias ExZarr.Codecs.ShardingIndexed
+  defp if_match_opts(%{etag: etag}) when not is_nil(etag), do: [if_match: etag]
+  defp if_match_opts(_info), do: []
 
+  defp inner_chunk_ranges(entries, locals, shard_size) do
+    Enum.reduce_while(locals, {:ok, []}, fn local, {:ok, acc} ->
+      case ShardingIndexed.index_entry(entries, local) do
+        {:ok, {offset, nbytes} = entry} ->
+          cond do
+            ShardingIndexed.empty_entry?(entry) ->
+              {:cont, {:ok, acc}}
+
+            offset + nbytes > shard_size ->
+              {:halt, {:error, {:invalid_shard_index, :offset_out_of_bounds}}}
+
+            true ->
+              {:cont, {:ok, [{local, entry} | acc]}}
+          end
+
+        error ->
+          {:halt, error}
+      end
+    end)
+  end
+
+  defp fetch_inner_ranges(array, shard_idx, wanted, range_opts) do
+    concurrency = Application.get_env(:ex_zarr, :range_read_concurrency, 4)
+    timeout = Application.get_env(:ex_zarr, :range_read_timeout, 60_000)
+
+    wanted
+    |> Task.async_stream(
+      fn {local, {offset, nbytes}} ->
+        {local, Storage.read_chunk_range(array.storage, shard_idx, offset, nbytes, range_opts)}
+      end,
+      max_concurrency: max(concurrency, 1),
+      timeout: timeout,
+      on_timeout: :kill_task
+    )
+    |> Enum.reduce_while({:ok, %{}}, fn
+      {:ok, {local, {:ok, payload}}}, {:ok, acc} -> {:cont, {:ok, Map.put(acc, local, payload)}}
+      {:ok, {_local, {:error, reason}}}, _acc -> {:halt, {:error, reason}}
+      {:exit, reason}, _acc -> {:halt, {:error, {:task_exit, reason}}}
+    end)
+  end
+
+  defp decode_inner_payloads(locals, payloads, codec) do
+    Enum.reduce_while(locals, {:ok, %{}}, fn local, {:ok, acc} ->
+      case Map.fetch(payloads, local) do
+        :error ->
+          {:cont, {:ok, Map.put(acc, local, :fill)}}
+
+        {:ok, payload} ->
+          case ShardingIndexed.decode_chunk_payload(payload, codec) do
+            {:ok, decoded} -> {:cont, {:ok, Map.put(acc, local, decoded)}}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+      end
+    end)
+  end
+
+  defp read_inner_chunks_full_shard(array, shard_idx, locals, codec, reason) do
     case Storage.read_chunk(array.storage, shard_idx) do
       {:ok, shard_data} ->
-        emit_range_telemetry(array, :fallback, byte_size(shard_data), true)
+        emit_shard_read_telemetry(byte_size(shard_data), byte_size(shard_data), 1, reason)
 
         Enum.reduce_while(locals, {:ok, %{}}, fn local, {:ok, acc} ->
-          case ShardingIndexed.decode_chunk(shard_data, local, sharding_codec) do
+          case ShardingIndexed.decode_chunk(shard_data, local, codec) do
             {:ok, data} -> {:cont, {:ok, Map.put(acc, local, data)}}
             {:error, {:chunk_not_found, _}} -> {:cont, {:ok, Map.put(acc, local, :fill)}}
-            {:error, reason} -> {:halt, {:error, reason}}
+            {:error, error} -> {:halt, shard_decode_error(shard_data, codec, error)}
           end
         end)
 
       {:error, :not_found} ->
         {:ok, Map.new(locals, &{&1, :fill})}
 
-      {:error, reason} ->
-        {:error, reason}
+      {:error, error} ->
+        {:error, error}
     end
   end
 
-  defp emit_range_telemetry(_array, _kind, bytes, fallback)
-       when is_integer(bytes) and is_boolean(fallback) do
-    ExZarr.Telemetry.shard_range_read(bytes, bytes, 1, fallback)
+  defp shard_decode_error(shard_data, codec, reason) do
+    if ShardingIndexed.legacy_format?(shard_data, codec.index_location) do
+      {:error, {:legacy_shard_format, :rewrite_required}}
+    else
+      {:error, reason}
+    end
+  end
+
+  defp emit_shard_read_telemetry(bytes_requested, bytes_fetched, range_count, fallback_reason) do
+    ExZarr.Telemetry.shard_range_read(
+      bytes_requested,
+      bytes_fetched,
+      range_count,
+      fallback_reason
+    )
   end
 
   defp write_chunks(array, chunks, indices) do
@@ -2609,66 +2674,49 @@ defmodule ExZarr.Array do
   end
 
   defp write_chunks_with_sharding(array, chunks, indices) do
-    alias ExZarr.Codecs.ShardingIndexed
-
-    sharding_codec = get_sharding_codec(array)
-
-    chunks_by_shard =
-      Enum.zip(chunks, indices)
+    with {:ok, codec} <- get_sharding_codec(array) do
+      chunks
+      |> Enum.zip(indices)
       |> Enum.group_by(
         fn {_chunk_data, chunk_idx} ->
-          calculate_shard_index(chunk_idx, sharding_codec.chunk_shape)
+          calculate_shard_index(chunk_idx, codec.chunks_per_shard)
         end,
         fn {chunk_data, chunk_idx} ->
-          {to_local_chunk_index(chunk_idx, sharding_codec.chunk_shape), chunk_data}
+          {to_local_chunk_index(chunk_idx, codec.chunks_per_shard), chunk_data}
         end
       )
-
-    results =
-      Enum.map(chunks_by_shard, fn {shard_idx, chunk_updates} ->
-        existing_chunks =
-          case Storage.read_chunk(array.storage, shard_idx) do
-            {:ok, shard_data} ->
-              case ShardingIndexed.decode(shard_data, sharding_codec) do
-                {:ok, chunks_map} -> chunks_map
-                {:error, _} -> %{}
-              end
-
-            {:error, :not_found} ->
-              %{}
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-
-        updated_chunks =
-          if is_map(existing_chunks) do
-            Enum.reduce(chunk_updates, existing_chunks, fn {local_idx, chunk_data}, acc ->
-              Map.put(acc, local_idx, chunk_data)
-            end)
-          else
-            existing_chunks
-          end
-
-        if is_map(updated_chunks) do
-          case ShardingIndexed.encode(updated_chunks, sharding_codec) do
-            {:ok, shard_data} -> Storage.write_chunk(array.storage, shard_idx, shard_data)
-            {:error, reason} -> {:error, reason}
-          end
-        else
-          updated_chunks
+      |> Enum.reduce_while(:ok, fn {shard_idx, updates}, :ok ->
+        case write_shard(array, codec, shard_idx, updates) do
+          :ok -> {:cont, :ok}
+          error -> {:halt, error}
         end
       end)
-
-    if Enum.all?(results, &(&1 == :ok)), do: :ok, else: {:error, :write_failed}
+    end
   end
 
-  defp to_local_chunk_index(chunk_index, shard_chunk_shape) do
-    chunk_index
-    |> Tuple.to_list()
-    |> Enum.zip(Tuple.to_list(shard_chunk_shape))
-    |> Enum.map(fn {coord, size} -> rem(coord, size) end)
-    |> List.to_tuple()
+  # Read-modify-write of one shard. An existing shard that cannot be decoded
+  # is an error: treating it as empty would drop its other inner chunks.
+  defp write_shard(array, codec, shard_idx, updates) do
+    with {:ok, existing} <- read_existing_shard(array, codec, shard_idx),
+         {:ok, shard_data} <- ShardingIndexed.encode(Map.merge(existing, Map.new(updates)), codec) do
+      Storage.write_chunk(array.storage, shard_idx, shard_data)
+    end
+  end
+
+  defp read_existing_shard(array, codec, shard_idx) do
+    case Storage.read_chunk(array.storage, shard_idx) do
+      {:ok, shard_data} ->
+        case ShardingIndexed.decode(shard_data, codec) do
+          {:ok, chunks_map} -> {:ok, chunks_map}
+          {:error, reason} -> shard_decode_error(shard_data, codec, reason)
+        end
+
+      {:error, :not_found} ->
+        {:ok, %{}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp split_into_chunks(array, data, start, stop) do
@@ -2846,7 +2894,7 @@ defmodule ExZarr.Array do
     0..(size - 1)
     |> Enum.map(fn i ->
       offset = i * element_size
-      <<_::binary-size(offset), element::binary-size(element_size), _::binary>> = data
+      <<_::binary-size(^offset), element::binary-size(^element_size), _::binary>> = data
       decode_element(element, dtype)
     end)
     |> List.to_tuple()
@@ -2863,7 +2911,7 @@ defmodule ExZarr.Array do
     0..(first_dim - 1)
     |> Enum.map(fn i ->
       offset = i * sub_bytes
-      <<_::binary-size(offset), sub_data::binary-size(sub_bytes), _::binary>> = data
+      <<_::binary-size(^offset), sub_data::binary-size(^sub_bytes), _::binary>> = data
 
       if tuple_size(rest_shape) == 1 do
         # Next level is 1D
@@ -2999,10 +3047,10 @@ defmodule ExZarr.Array do
     length = (overlap_stop - overlap_start) * element_size
 
     # Extract from chunk
-    <<_::binary-size(chunk_offset), data::binary-size(length), _::binary>> = chunk_data
+    <<_::binary-size(^chunk_offset), data::binary-size(^length), _::binary>> = chunk_data
 
     # Place in output
-    <<before::binary-size(output_offset), _::binary-size(length), after_part::binary>> = output
+    <<before::binary-size(^output_offset), _::binary-size(^length), after_part::binary>> = output
     <<before::binary, data::binary, after_part::binary>>
   end
 
@@ -3027,7 +3075,7 @@ defmodule ExZarr.Array do
         row_length = (overlap_stop_x - overlap_start_x) * element_size
 
         # Extract row from chunk
-        <<_::binary-size(chunk_offset), row_data::binary-size(row_length), _::binary>> =
+        <<_::binary-size(^chunk_offset), row_data::binary-size(^row_length), _::binary>> =
           chunk_data
 
         # Position in output
@@ -3060,7 +3108,7 @@ defmodule ExZarr.Array do
 
         unchanged =
           if unchanged_size > 0 do
-            <<unchanged_part::binary-size(unchanged_size), _::binary>> =
+            <<unchanged_part::binary-size(^unchanged_size), _::binary>> =
               :binary.part(binary, pos, byte_size(binary) - pos)
 
             unchanged_part
@@ -3079,7 +3127,7 @@ defmodule ExZarr.Array do
 
     remaining =
       if remaining_size > 0 do
-        <<_::binary-size(last_pos), remaining_part::binary>> = binary
+        <<_::binary-size(^last_pos), remaining_part::binary>> = binary
         remaining_part
       else
         <<>>
@@ -3131,7 +3179,7 @@ defmodule ExZarr.Array do
         chunk_byte_offset = chunk_offset * element_size
 
         # Extract element from chunk
-        <<_::binary-size(chunk_byte_offset), element::binary-size(element_size), _::binary>> =
+        <<_::binary-size(^chunk_byte_offset), element::binary-size(^element_size), _::binary>> =
           chunk_data
 
         # Calculate offset in output
@@ -3222,10 +3270,10 @@ defmodule ExZarr.Array do
     length = (overlap_stop - overlap_start) * element_size
 
     # Extract data from input
-    <<_::binary-size(input_offset), data::binary-size(length), _::binary>> = input_data
+    <<_::binary-size(^input_offset), data::binary-size(^length), _::binary>> = input_data
 
     # Write to chunk
-    <<before::binary-size(chunk_offset), _::binary-size(length), after_part::binary>> =
+    <<before::binary-size(^chunk_offset), _::binary-size(^length), after_part::binary>> =
       chunk_data
 
     <<before::binary, data::binary, after_part::binary>>
@@ -3254,7 +3302,7 @@ defmodule ExZarr.Array do
       row_length = (overlap_stop_x - overlap_start_x) * element_size
 
       # Extract row from input
-      <<_::binary-size(input_offset), row_data::binary-size(row_length), _::binary>> =
+      <<_::binary-size(^input_offset), row_data::binary-size(^row_length), _::binary>> =
         input_data
 
       # Position in chunk
@@ -3262,7 +3310,7 @@ defmodule ExZarr.Array do
       chunk_offset = (chunk_row * chunk_w + (overlap_start_x - chunk_start_x)) * element_size
 
       # Write row to chunk
-      <<before::binary-size(chunk_offset), _::binary-size(row_length), after_part::binary>> = acc
+      <<before::binary-size(^chunk_offset), _::binary-size(^row_length), after_part::binary>> = acc
       <<before::binary, row_data::binary, after_part::binary>>
     end)
   end
@@ -3314,7 +3362,7 @@ defmodule ExZarr.Array do
       input_byte_offset = input_offset * element_size
 
       # Extract element from input
-      <<_::binary-size(input_byte_offset), element::binary-size(element_size), _::binary>> =
+      <<_::binary-size(^input_byte_offset), element::binary-size(^element_size), _::binary>> =
         input_data
 
       # Calculate offset in chunk
@@ -3329,7 +3377,7 @@ defmodule ExZarr.Array do
       chunk_byte_offset = chunk_offset * element_size
 
       # Write element to chunk
-      <<before::binary-size(chunk_byte_offset), _::binary-size(element_size), after_part::binary>> =
+      <<before::binary-size(^chunk_byte_offset), _::binary-size(^element_size), after_part::binary>> =
         acc
 
       <<before::binary, element::binary, after_part::binary>>
@@ -3363,55 +3411,40 @@ defmodule ExZarr.Array do
 
   # Sharding helper functions
 
-  defp sharding_enabled?(array) do
-    case array.metadata do
-      %ExZarr.MetadataV3{codecs: codecs} when is_list(codecs) ->
-        Enum.any?(codecs, fn codec ->
-          (is_map(codec) and Map.get(codec, :name) == "sharding_indexed") or
-            (is_map(codec) and Map.get(codec, "name") == "sharding_indexed")
-        end)
+  defp sharding_enabled?(array), do: sharding_config(array.metadata) != nil
 
-      _ ->
-        false
-    end
+  defp sharding_config(%MetadataV3{codecs: codecs}) when is_list(codecs) do
+    Enum.find_value(codecs, fn codec ->
+      if is_map(codec) and (Map.get(codec, :name) || Map.get(codec, "name")) == "sharding_indexed" do
+        Map.get(codec, :configuration) || Map.get(codec, "configuration") || %{}
+      end
+    end)
   end
+
+  defp sharding_config(_metadata), do: nil
 
   defp get_sharding_codec(array) do
-    case array.metadata do
-      %ExZarr.MetadataV3{codecs: codecs} when is_list(codecs) ->
-        sharding_spec =
-          Enum.find(codecs, fn codec ->
-            (is_map(codec) and Map.get(codec, :name) == "sharding_indexed") or
-              (is_map(codec) and Map.get(codec, "name") == "sharding_indexed")
-          end)
-
-        if sharding_spec do
-          config =
-            Map.get(sharding_spec, :configuration) || Map.get(sharding_spec, "configuration") ||
-              %{}
-
-          {:ok, codec} = ShardingIndexed.init(config)
-          codec
-        else
-          nil
-        end
-
-      _ ->
-        nil
+    with {:ok, grid_shape} <- MetadataV3.get_chunk_shape(array.metadata) do
+      ShardingIndexed.init(sharding_config(array.metadata),
+        shard_shape: grid_shape,
+        dtype: array.dtype
+      )
     end
   end
 
-  defp calculate_shard_index(chunk_index, shard_chunk_shape) do
-    chunk_list = Tuple.to_list(chunk_index)
-    shard_shape_list = Tuple.to_list(shard_chunk_shape)
+  # Inner-chunk grid index -> shard index / index within the shard.
+  defp calculate_shard_index(chunk_index, chunks_per_shard),
+    do: map_index(chunk_index, chunks_per_shard, &div/2)
 
-    shard_indices =
-      Enum.zip(chunk_list, shard_shape_list)
-      |> Enum.map(fn {chunk_coord, shard_size} ->
-        div(chunk_coord, shard_size)
-      end)
+  defp to_local_chunk_index(chunk_index, chunks_per_shard),
+    do: map_index(chunk_index, chunks_per_shard, &rem/2)
 
-    List.to_tuple(shard_indices)
+  defp map_index(chunk_index, chunks_per_shard, fun) do
+    chunk_index
+    |> Tuple.to_list()
+    |> Enum.zip(Tuple.to_list(chunks_per_shard))
+    |> Enum.map(fn {coord, n} -> fun.(coord, n) end)
+    |> List.to_tuple()
   end
 
   # Index validation functions
@@ -3535,20 +3568,13 @@ defmodule ExZarr.Array do
     end
   end
 
+  # Existing chunk contents for a read-modify-write. Goes through the normal
+  # read path so v3 codec pipelines and sharding are honoured; missing chunks
+  # come back as fill chunks.
   defp read_or_create_chunk(array, chunk_index) do
-    case Storage.read_chunk(array.storage, chunk_index) do
-      {:ok, compressed} ->
-        case Codecs.decompress(compressed, array.compressor) do
-          {:ok, decompressed} -> {:ok, decompressed}
-          {:error, reason} -> {:error, reason}
-        end
-
-      {:error, :not_found} ->
-        {:ok, create_fill_chunk(array)}
-
-      {:error, reason} ->
-        # Propagate other storage errors (e.g., from mock backend in error mode)
-        {:error, reason}
+    case read_chunks(array, [chunk_index]) do
+      {:ok, [data]} -> {:ok, data}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -3657,59 +3683,31 @@ defmodule ExZarr.Array do
     |> Enum.reduce_while({:ok, data}, fn {filter_id, opts}, {:ok, acc_data} ->
       case Codecs.Registry.get(filter_id) do
         {:ok, :builtin_delta} ->
-          case decode_builtin_filter(acc_data, :delta, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :delta, opts))
 
         {:ok, :builtin_quantize} ->
-          case decode_builtin_filter(acc_data, :quantize, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :quantize, opts))
 
         {:ok, :builtin_shuffle} ->
-          case decode_builtin_filter(acc_data, :shuffle, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :shuffle, opts))
 
         {:ok, :builtin_fixedscaleoffset} ->
-          case decode_builtin_filter(acc_data, :fixedscaleoffset, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :fixedscaleoffset, opts))
 
         {:ok, :builtin_astype} ->
-          case decode_builtin_filter(acc_data, :astype, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :astype, opts))
 
         {:ok, :builtin_packbits} ->
-          case decode_builtin_filter(acc_data, :packbits, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :packbits, opts))
 
         {:ok, :builtin_categorize} ->
-          case decode_builtin_filter(acc_data, :categorize, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :categorize, opts))
 
         {:ok, :builtin_bitround} ->
-          case decode_builtin_filter(acc_data, :bitround, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(decode_builtin_filter(acc_data, :bitround, opts))
 
         {:ok, module} when is_atom(module) ->
-          # Custom filter
-          case module.decode(acc_data, opts) do
-            {:ok, decoded} -> {:cont, {:ok, decoded}}
-            error -> {:halt, error}
-          end
+          filter_step(module.decode(acc_data, opts))
 
         {:error, :not_found} ->
           # Unknown filter - skip with warning
@@ -3728,59 +3726,31 @@ defmodule ExZarr.Array do
     Enum.reduce_while(filters, {:ok, data}, fn {filter_id, opts}, {:ok, acc_data} ->
       case Registry.get(filter_id) do
         {:ok, :builtin_delta} ->
-          case encode_builtin_filter(acc_data, :delta, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :delta, opts))
 
         {:ok, :builtin_quantize} ->
-          case encode_builtin_filter(acc_data, :quantize, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :quantize, opts))
 
         {:ok, :builtin_shuffle} ->
-          case encode_builtin_filter(acc_data, :shuffle, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :shuffle, opts))
 
         {:ok, :builtin_fixedscaleoffset} ->
-          case encode_builtin_filter(acc_data, :fixedscaleoffset, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :fixedscaleoffset, opts))
 
         {:ok, :builtin_astype} ->
-          case encode_builtin_filter(acc_data, :astype, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :astype, opts))
 
         {:ok, :builtin_packbits} ->
-          case encode_builtin_filter(acc_data, :packbits, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :packbits, opts))
 
         {:ok, :builtin_categorize} ->
-          case encode_builtin_filter(acc_data, :categorize, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :categorize, opts))
 
         {:ok, :builtin_bitround} ->
-          case encode_builtin_filter(acc_data, :bitround, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(encode_builtin_filter(acc_data, :bitround, opts))
 
         {:ok, module} when is_atom(module) ->
-          # Custom filter
-          case module.encode(acc_data, opts) do
-            {:ok, encoded} -> {:cont, {:ok, encoded}}
-            error -> {:halt, error}
-          end
+          filter_step(module.encode(acc_data, opts))
 
         {:error, :not_found} ->
           # Unknown filter - skip with warning
@@ -3790,6 +3760,10 @@ defmodule ExZarr.Array do
       end
     end)
   end
+
+  defp filter_step({:ok, data}), do: {:cont, {:ok, data}}
+  defp filter_step({:error, _} = error), do: {:halt, error}
+  defp filter_step(other), do: {:halt, {:error, {:invalid_filter_result, other}}}
 
   # Built-in filter implementations
 

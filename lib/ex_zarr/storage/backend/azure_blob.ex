@@ -13,7 +13,9 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
   - `:account_key` - Azure storage account key (required unless `:azure_client` given)
   - `:container` - Blob container name (required)
   - `:prefix` - Blob prefix within the container (optional, default `""`)
-  - `:zarr_format` - `2` or `3` (optional, default `2`)
+  - `:zarr_format` (or `:zarr_version`) - `2` or `3` (optional, default `2`;
+    updated from the array metadata on create/open, and opening probes both
+    `zarr.json` and `.zarray`)
 
   Advanced path — inject a prebuilt client (Shared Key, SAS, Entra, Azurite, etc.):
 
@@ -46,26 +48,29 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
   @impl true
   def init(config) do
     with {:ok, container} <- fetch_required(config, :container),
-         {:ok, zarr_format} <- fetch_zarr_format(config),
+         {:ok, layout} <- ObjectKeys.config_layout(config),
          {:ok, client} <- build_or_fetch_client(config) do
+      # Credentials live only inside the client, never in backend state.
       {:ok,
-       %{
+       Map.merge(layout, %{
          client: client,
          container: container,
-         prefix: Keyword.get(config, :prefix, ""),
-         zarr_format: zarr_format,
-         account_name: Keyword.get(config, :account_name),
-         account_key: Keyword.get(config, :account_key)
-       }}
+         prefix: Keyword.get(config, :prefix, "")
+       })}
     end
   end
 
   @impl true
   def open(config), do: init(config)
 
+  @doc false
+  @impl true
+  def put_layout(state, layout),
+    do: Map.merge(state, Map.take(layout, [:zarr_format, :chunk_key_encoding]))
+
   @impl true
   def read_chunk(state, chunk_index) do
-    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    blob_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case blob_api().download(state.client, state.container, blob_name) do
       {:ok, %{content: content}} when is_binary(content) ->
@@ -78,7 +83,7 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
 
   @impl true
   def write_chunk(state, chunk_index, data) do
-    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    blob_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case blob_api().upload(state.client, state.container, blob_name, data) do
       {:ok, _} -> :ok
@@ -88,36 +93,25 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
 
   @impl true
   def read_metadata(state) do
-    blob_name = ObjectKeys.metadata_key(state.prefix, state.zarr_format)
+    state.prefix
+    |> ObjectKeys.metadata_keys(state.zarr_format)
+    |> Enum.reduce_while({:error, :not_found}, fn blob_name, _acc ->
+      case blob_api().download(state.client, state.container, blob_name) do
+        {:ok, %{content: content}} when is_binary(content) ->
+          {:halt, {:ok, content}}
 
-    case blob_api().download(state.client, state.container, blob_name) do
-      {:ok, %{content: content}} when is_binary(content) ->
-        {:ok, content}
-
-      {:error, error} ->
-        # Prefer v3 then v2 when opening without an explicit format
-        if state.zarr_format == 2 do
-          normalize_error(error)
-        else
-          fallback = ObjectKeys.metadata_key(state.prefix, 2)
-
-          case blob_api().download(state.client, state.container, fallback) do
-            {:ok, %{content: content}} when is_binary(content) -> {:ok, content}
-            {:error, _} -> normalize_error(error)
+        {:error, error} ->
+          case normalize_error(error) do
+            {:error, :not_found} -> {:cont, {:error, :not_found}}
+            other -> {:halt, other}
           end
-        end
-    end
+      end
+    end)
   end
 
   @impl true
   def write_metadata(state, metadata, _opts) when is_binary(metadata) do
-    version =
-      case Jason.decode(metadata) do
-        {:ok, %{"zarr_format" => 3}} -> 3
-        {:ok, %{zarr_format: 3}} -> 3
-        _ -> state.zarr_format
-      end
-
+    version = ObjectKeys.metadata_version(metadata, state.zarr_format)
     blob_name = ObjectKeys.metadata_key(state.prefix, version)
 
     case blob_api().upload(state.client, state.container, blob_name, metadata) do
@@ -134,9 +128,14 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
       {:ok, blobs} ->
         chunks =
           blobs
-          |> Enum.map(&blob_name/1)
-          |> Enum.filter(&ObjectKeys.chunk_key?(&1, state.zarr_format))
-          |> Enum.map(&ObjectKeys.parse_chunk_key(&1, state.prefix, state.zarr_format))
+          |> Enum.map(
+            &ObjectKeys.parse_chunk_key(
+              blob_name(&1),
+              state.prefix,
+              state.zarr_format,
+              Map.get(state, :chunk_key_encoding)
+            )
+          )
           |> Enum.reject(&is_nil/1)
 
         {:ok, chunks}
@@ -148,7 +147,7 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
 
   @impl true
   def delete_chunk(state, chunk_index) do
-    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    blob_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case blob_api().delete(state.client, state.container, blob_name) do
       {:ok, _} ->
@@ -179,13 +178,15 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
 
   @doc false
   @impl true
-  @spec chunk_info(map(), tuple()) :: {:ok, map()} | {:error, term()}
   def chunk_info(state, chunk_index) do
-    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+    blob_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
     case blob_api().properties(state.client, state.container, blob_name) do
-      {:ok, props} ->
-        {:ok, %{size: Map.get(props, :content_length, 0), etag: Map.get(props, :etag)}}
+      {:ok, %{content_length: size} = props} when is_integer(size) ->
+        {:ok, %{size: size, etag: Map.get(props, :etag)}}
+
+      {:ok, _props} ->
+        {:error, {:azure_error, :missing_content_length}}
 
       {:error, error} ->
         normalize_error(error)
@@ -194,38 +195,22 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
 
   @doc false
   @impl true
-  @spec read_chunk_range(map(), tuple(), non_neg_integer(), non_neg_integer()) ::
-          {:ok, binary()} | {:error, term()}
-  def read_chunk_range(state, chunk_index, offset, length)
-      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 0 do
-    blob_name = ObjectKeys.chunk_key(state.prefix, chunk_index, state.zarr_format)
+  def read_chunk_range(state, chunk_index, offset, length),
+    do: read_chunk_range(state, chunk_index, offset, length, [])
 
-    opts =
-      if length == 0 do
-        []
-      else
-        [range: {offset, offset + length - 1}]
-      end
+  @doc false
+  @impl true
+  def read_chunk_range(state, chunk_index, offset, length, opts)
+      when is_integer(offset) and offset >= 0 and is_integer(length) and length > 0 do
+    blob_name = ObjectKeys.state_chunk_key(state, chunk_index)
 
-    opts =
-      case Keyword.get_values(opts, :range) do
-        [] ->
-          opts
+    download_opts =
+      [range: {offset, offset + length - 1}]
+      |> maybe_put(:if_match, Keyword.get(opts, :if_match))
 
-        _ ->
-          case chunk_info(state, chunk_index) do
-            {:ok, %{etag: etag}} when is_binary(etag) -> Keyword.put(opts, :if_match, etag)
-            _ -> opts
-          end
-      end
-
-    if length == 0 do
-      {:ok, ""}
-    else
-      case blob_api().download(state.client, state.container, blob_name, opts) do
-        {:ok, %{content: content}} when is_binary(content) -> {:ok, content}
-        {:error, error} -> normalize_error(error)
-      end
+    case blob_api().download(state.client, state.container, blob_name, download_opts) do
+      {:ok, %{content: content}} when is_binary(content) -> {:ok, content}
+      {:error, error} -> normalize_error(error)
     end
   end
 
@@ -268,13 +253,6 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp fetch_zarr_format(config) do
-    case Keyword.get(config, :zarr_format, 2) do
-      version when version in [2, 3] -> {:ok, version}
-      other -> {:error, {:invalid_zarr_format, other}}
-    end
-  end
-
   defp fetch_required(config, key) do
     case Keyword.fetch(config, key) do
       {:ok, value} when is_binary(value) and value != "" ->
@@ -296,16 +274,11 @@ defmodule ExZarr.Storage.Backend.AzureBlob do
   defp blob_name(name) when is_binary(name), do: name
   defp blob_name(_), do: ""
 
-  defp normalize_error(%{status: 404}), do: {:error, :not_found}
-  defp normalize_error(%{status_code: 404}), do: {:error, :not_found}
-
   defp normalize_error(error) when is_map(error) do
-    status = Map.get(error, :status) || Map.get(error, :status_code)
-
-    if status == 404 do
-      {:error, :not_found}
-    else
-      {:error, {:azure_error, error}}
+    case Map.get(error, :status) || Map.get(error, :status_code) do
+      404 -> {:error, :not_found}
+      412 -> {:error, :precondition_failed}
+      _ -> {:error, {:azure_error, error}}
     end
   end
 

@@ -10,34 +10,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 
 ### Added
-- Optional storage range APIs: `chunk_info/2`, `read_chunk_range/4`, `capabilities/1`
-- `ExZarr.Storage.ObjectKeys` for centralized v2/v3 object naming
+- Optional storage backend callbacks: `chunk_info/2`, `read_chunk_range/4`,
+  conditional `read_chunk_range/5` (`if_match:`), `capabilities/1`, `put_layout/2`
+- `ExZarr.Storage.ObjectKeys` for centralized v2/v3 object naming, including
+  v3 `chunk_key_encoding` (`default`/`v2`, `/` or `.` separator)
 - `storage_transformers` metadata parse/preserve with `must_understand` enforcement
 - Extension normalization via `MetadataV3.normalize_extension/1`
-- Python fixture generator and CI matrix job (zarr 2.x / 3.2 / 3.3 / 3.4)
-- Range-aware sharded reads with bounded concurrency and full-shard fallback
+- Range-aware sharded reads: shard index + needed inner chunks only, bounded
+  concurrency (`:range_read_concurrency`), per-request timeout
+  (`:range_read_timeout`), version-pinned ranges with retry, full-shard fallback
+- `[:ex_zarr, :shard, :range_read]` telemetry event (one per shard read, with
+  `fallback_reason`)
+- zarr-python fixture generator with SHA-256 manifests, a fixture test
+  (`:python_fixtures`), sharded ExZarr <-> zarr-python tests, and a blocking CI
+  matrix (zarr-python 2.18.3 / 3.2.1 / 3.3.0 / 3.4.0)
 - Azurite-oriented Azure integration test (tagged `:azure`)
-- Showcase: `examples/range_aware_sharded_nx.exs`
+- Showcase: `examples/range_aware_sharded_nx.exs` (run with `mix run`)
 
 ### Fixed
+- `sharding_indexed` follows the v1.0 spec geometry (chunk grid = shard shape,
+  codec `chunk_shape` = inner chunk shape) and interoperates with zarr-python
+- Cloud v3 arrays created with `zarr_version: 3` use `zarr.json` + `c/...`
+  keys; opening probes `zarr.json` and `.zarray`
+- S3 range reads now send the `Range` header (ExAws ignored the previous
+  `headers:` option and downloaded the whole object)
+- Range responses are validated against the requested length
+- Chunk listing strips the prefix exactly once and ignores nested nodes
+- Malformed or foreign shards return errors instead of raising; inner chunks
+  are checked against the expected size
+- Writing to a shard that cannot be decoded returns an error instead of
+  silently dropping its other inner chunks
+- Shards in the pre-1.2.0 private layout return
+  `{:error, {:legacy_shard_format, :rewrite_required}}`
+- `bytes` codecs carry `endian: "little"` for multi-byte data types (required
+  by zarr-python), including inside `sharding_indexed`
+- Filesystem read locks wait for writers and no longer leave `.lock.read`
+  files in the store
 - Scalar (`shape: {}`) and zero-length dimension support in MetadataV3 / Array
 - Dimension-name over-validation (spec strings/nil; uniqueness not required at metadata)
-- Cloud backends no longer hardcode v2-only `.zarray` / dot chunk keys
-- `sharding_indexed` now follows accepted v1.0 dense index + sentinel format
 
 ### Changed
-- Azure Blob backend uses optional `azure_sdk ~> 0.4.1`
-- Shared Key config preserved; advanced path via `azure_client:`
-- Docs state tested compatibility more precisely
+- `create/1` with `shard_shape:` writes spec metadata: `shard_shape` is the
+  number of inner chunks per shard and `chunks` the inner chunk shape
+- With an explicit `sharding_indexed` codec, `chunks:` is the shard shape and
+  `array.chunks` reports the inner chunk shape (as zarr-python does)
+- Sharding index codecs are limited to `bytes` and `crc32c`
+- Azure Blob backend uses optional `azure_sdk ~> 0.4.1`; Shared Key config
+  preserved, advanced path via `azure_client:`; credentials are no longer kept
+  in backend state
+- `Storage.chunk_info/2` returns `{:error, :unsupported}` for backends without
+  `chunk_info/2` instead of downloading the object
+- Optional HTTP client is now `req ~> 0.6.1` (with `override: true` until
+  `azure_sdk` widens its `req ~> 0.5` constraint); `ex_aws` updated to 2.7.x
+
+### Security
+- Bump `req` past CVE-2026-49755 (decompression-bomb DoS); GCS binary object
+  GETs use `decode_body: false`
 
 ### Removed
 - `azurex` dependency and Azurex-based adapter code
+- Unused optional `google_api_storage` (GCS uses Goth + Req directly; this also
+  unblocked `mime` 2.x required by patched Req)
 
 ### Known limitations
 - Storage transformers are not executed (metadata only)
 - No adaptive multi-range coalescing
 - No partial writes inside cloud shards
-- Legacy ExZarr-private shard bytes are not silently decoded as standard Zarr
+- Filesystem and memory range reads are not version-pinned
 
 ## [1.1.0] - 2026-06-12
 

@@ -19,7 +19,7 @@ Thank you for your interest in contributing to ExZarr! This guide will help you 
 
 Before you begin, ensure you have:
 
-- **Elixir 1.14+** and **Erlang/OTP 25+**
+- **Elixir 1.17+** and **Erlang/OTP 25+**
   ```bash
   elixir --version
   # Elixir 1.19.5 (compiled with Erlang/OTP 28)

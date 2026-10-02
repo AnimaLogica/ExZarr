@@ -417,8 +417,6 @@ defmodule ExZarr.Codecs.Registry do
     function_exported?(ExZarr.Codecs.ZigCodecs, :bzip2_compress, 2)
   end
 
-  defp check_builtin_available(_), do: false
-
   # Temporary helper for built-in codec info (Phase 1)
   defp get_builtin_info(:builtin_none) do
     %{
@@ -491,7 +489,4 @@ defmodule ExZarr.Codecs.Registry do
       description: "Bzip2 compression via Zig NIF"
     }
   end
-
-  defp get_builtin_info(_),
-    do: %{name: "Unknown", version: "0.0.0", type: :unknown, description: "Unknown codec"}
 end
