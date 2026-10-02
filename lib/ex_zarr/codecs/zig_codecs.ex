@@ -48,7 +48,7 @@ defmodule ExZarr.Codecs.ZigCodecs do
   dnf install zstd-devel lz4-devel snappy-devel blosc-devel bzip2-devel
   ```
 
-  See `PRECOMPILATION.md` for releasing new precompiled artifacts.
+  See `docs/PRECOMPILATION.md` for releasing new precompiled artifacts.
   """
 
   alias ExZarr.Codecs.CompressionConfig

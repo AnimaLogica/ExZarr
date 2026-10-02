@@ -376,16 +376,8 @@ defmodule ExZarr.V3PythonInteropTest do
         py_dtype = result["metadata"]["dtype"]
         dtype_str = Atom.to_string(dtype)
 
-        expected_base =
-          case dtype_str do
-            "uint" <> bits -> "uint" <> bits
-            "int" <> bits -> "int" <> bits
-            "float" <> bits -> "float" <> bits
-            other -> other
-          end
-
-        assert String.contains?(py_dtype, expected_base),
-               "Dtype mismatch: Python sees #{py_dtype}, expected #{expected_base}"
+        assert String.contains?(py_dtype, dtype_str),
+               "Dtype mismatch: Python sees #{py_dtype}, expected #{dtype_str}"
       end
     end
 

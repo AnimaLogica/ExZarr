@@ -13,7 +13,7 @@ Elixir implementation of [Zarr](https://zarr.dev): compressed, chunked, N-dimens
 **Zarr v3.1 core support:** ExZarr implements Zarr v2 and Zarr core v3.1 for the
 documented dtype/codec subset, with automatic version detection and Python
 interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
-[ZARR_V3_STATUS.md](ZARR_V3_STATUS.md) for details and known limitations.
+[ZARR_V3_STATUS.md](docs/ZARR_V3_STATUS.md) for details and known limitations.
 
 ## Features
 
@@ -113,7 +113,7 @@ ExZarr.Array.write_stream(array, chunk_stream,
 )
 ```
 
-See [migration_guide_v1_1_0.md](migration_guide_v1_1_0.md) and [docs/educational/v1_1_streaming_guide.md](docs/educational/v1_1_streaming_guide.md).
+See [migration_guide_v1_1_0.md](docs/migration_guide_v1_1_0.md) and [docs/educational/v1_1_streaming_guide.md](docs/educational/v1_1_streaming_guide.md).
 
 ## Performance
 
@@ -264,7 +264,7 @@ This demonstrates:
 - Creating arrays with Python that ExZarr can read
 - Compatible metadata and compression
 
-**For detailed interoperability information, see [INTEROPERABILITY.md](INTEROPERABILITY.md)** which covers:
+**For detailed interoperability information, see [INTEROPERABILITY.md](docs/INTEROPERABILITY.md)** which covers:
 
 - Data type compatibility table
 - Compression compatibility guidelines
@@ -657,7 +657,7 @@ ExZarr uses:
 - **Erlang :zlib** for zlib/gzip compression
 - **Zig NIFs** (`ExZarr.Codecs.ZigCodecs`) for zstd, lz4, snappy, blosc, bzip2, and crc32c —
   Hex/Livebook installs use **precompiled** artifacts (Zig not required); see
-  [`PRECOMPILATION.md`](PRECOMPILATION.md)
+  [`PRECOMPILATION.md`](docs/PRECOMPILATION.md)
 - **GenServer** for array state management
 - **Lazy streams** (`Stream.resource/3`, `Task.async_stream/3`) for bounded-memory chunk I/O
 - **Optional pipeline modules** (`ExZarr.Flow`, `ExZarr.GenStage`, `ExZarr.Broadway`) for backpressure and fault tolerance
@@ -794,7 +794,8 @@ These tests verify that:
 
 Comprehensive guides for all skill levels:
 
-- **[Getting Started](guides/quickstart.md)** - New to ExZarr? Start here!
+- **[What is Zarr?](guides/what_is_zarr.md)** — format overview
+- **[Introduction](guides/introduction.md)** — create, write, and read in minutes
   - Installation and basic concepts
   - Creating and opening arrays
   - Reading and writing data
@@ -872,7 +873,7 @@ Key modules:
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full release plan.
+See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
 **v1.2.0 (current)** - Zarr 3.1 interoperability & range-aware cloud I/O:
 spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,

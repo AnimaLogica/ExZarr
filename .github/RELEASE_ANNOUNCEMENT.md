@@ -44,7 +44,7 @@ z[:100, :100] = data
 ### 📚 Well Documented
 
 - Comprehensive guides and examples
-- [INTEROPERABILITY.md](INTEROPERABILITY.md) for Python integration
+- [docs/INTEROPERABILITY.md](../docs/INTEROPERABILITY.md) for Python integration
 - Interactive demo script
 - Complete API documentation
 
@@ -109,7 +109,7 @@ Planned for v0.2.0:
 
 - 📖 [Read the Documentation](https://hexdocs.pm/ex_zarr)
 - 🚀 [Try the Quick Start](https://github.com/your-username/ex_zarr#quick-start)
-- 🐍 [Python Interoperability Guide](https://github.com/your-username/ex_zarr/blob/main/INTEROPERABILITY.md)
+- 🐍 [Python Interoperability Guide](https://github.com/your-username/ex_zarr/blob/main/docs/INTEROPERABILITY.md)
 - 💬 [Open an Issue](https://github.com/your-username/ex_zarr/issues)
 
 ## Acknowledgments

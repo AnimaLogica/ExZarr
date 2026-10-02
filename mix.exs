@@ -98,7 +98,8 @@ defmodule ExZarr.MixProject do
       # Documentation — no :only: zig_doc (zigler transitive dep) requires ex_doc in prod
       {:ex_doc, "~> 0.39", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:doctor, "~> 0.21", only: :dev, runtime: false},
+      {:ex_slop, "~> 0.4.5", only: [:dev, :test], runtime: false},
+      {:doctor, "~> 0.23.0", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
@@ -132,12 +133,12 @@ defmodule ExZarr.MixProject do
         "lib",
         "native",
         "checksum-*.exs",
-        "PRECOMPILATION.md",
+        "docs/PRECOMPILATION.md",
         ".formatter.exs",
         "mix.exs",
         "README.md",
         "CHANGELOG.md",
-        "INTEROPERABILITY.md",
+        "docs/INTEROPERABILITY.md",
         "LICENSE"
       ]
     ]
@@ -145,12 +146,12 @@ defmodule ExZarr.MixProject do
 
   defp docs do
     [
-      main: "ExZarr",
+      main: "what_is_zarr",
       extras: [
         # Getting Started
-        "README.md",
-        "ZARR_V3_STATUS.md",
-        "guides/quickstart.md",
+        "guides/what_is_zarr.md",
+        "guides/introduction.md",
+        {"README.md", title: "Project README"},
 
         # Core Concepts
         "guides/core_concepts.md",
@@ -167,45 +168,66 @@ defmodule ExZarr.MixProject do
         # Advanced Topics
         "guides/performance.md",
         "guides/nx_integration.md",
+        "guides/telemetry.md",
+        "docs/educational/v1_1_streaming_guide.md",
+
+        # Examples
+        "livebooks/README.md",
+        "livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+        "livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+        "livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
+        "livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
+        "livebooks/05_finance/05_01_tick_data_cube.livemd",
+        "livebooks/broadway_pipeline.livemd",
+        "livebooks/nx_streaming.livemd",
+        "livebooks/zarr_fundamentals.livemd",
+        "livebooks/earthmover_datacube.livemd",
+        "livebooks/xarray_zarr_intro.livemd",
+        "livebooks/benchmarking_zarr.livemd",
+        "examples/README.md",
+
+        # Cookbooks
+        "livebooks/06_cookbook/06_01_100gb_arrays.livemd",
+        "livebooks/06_cookbook/06_02_1tb_arrays.livemd",
+        "livebooks/06_cookbook/06_03_image_archives.livemd",
+        "livebooks/06_cookbook/06_04_ml_pipelines.livemd",
+        "livebooks/06_cookbook/06_05_geospatial.livemd",
+        "livebooks/06_cookbook/06_06_scientific_computing.livemd",
+        "livebooks/06_cookbook/06_07_distributed.livemd",
+
+        # Architecture
+        "docs/architecture_review.md",
+        "docs/gap_analysis.md",
+        "docs/v1_1_design.md",
+        "docs/cloud_storage_patterns.md",
+
+        # Additional Documentation
+        "CHANGELOG.md",
+        "docs/release_notes_v1_1_0.md",
+        "docs/release_notes_v1_2_0.md",
+        "docs/ROADMAP.md",
+        "docs/ZARR_V3_STATUS.md",
+        "docs/INTEROPERABILITY.md",
+        "docs/SECURITY.md",
+        "docs/PERFORMANCE_IMPROVEMENTS.md",
+        "docs/V2_TO_V3_MIGRATION.md",
+        "docs/migration_guide_v1_1_0.md",
+        "benchmarks/README.md",
+        "docs/PRECOMPILATION.md",
+        "LICENSE",
 
         # Reference
         "guides/troubleshooting.md",
         "guides/glossary.md",
 
         # Contributing
-        "guides/contributing.md",
-        "guides/telemetry.md",
-        "migration_guide_v1_1_0.md",
-        "release_notes_v1_1_0.md",
-        "release_notes_v1_2_0.md",
-        "ROADMAP.md",
-        "docs/architecture_review.md",
-        "docs/gap_analysis.md",
-        "docs/v1_1_design.md",
-        "docs/cloud_storage_patterns.md",
-        "docs/cookbook/README.md",
-        "docs/cookbook/100gb_arrays.md",
-        "docs/cookbook/1tb_arrays.md",
-        "docs/cookbook/image_archives.md",
-        "docs/cookbook/ml_pipelines.md",
-        "docs/cookbook/geospatial.md",
-        "docs/cookbook/scientific_computing.md",
-        "docs/cookbook/distributed.md",
-        "docs/educational/v1_1_streaming_guide.md",
-
-        # Additional Documentation
-        "CHANGELOG.md",
-        "INTEROPERABILITY.md",
-        "LICENSE",
-        "PERFORMANCE_IMPROVEMENTS.md",
-        "SECURITY.md",
-        "docs/V2_TO_V3_MIGRATION.md",
-        "benchmarks/README.md"
+        "guides/contributing.md"
       ],
       groups_for_extras: [
         "Getting Started": [
-          "README.md",
-          "guides/quickstart.md"
+          "guides/what_is_zarr.md",
+          "guides/introduction.md",
+          "README.md"
         ],
         "Core Concepts": [
           "guides/core_concepts.md",
@@ -221,7 +243,57 @@ defmodule ExZarr.MixProject do
         ],
         "Advanced Topics": [
           "guides/performance.md",
-          "guides/nx_integration.md"
+          "guides/nx_integration.md",
+          "guides/telemetry.md",
+          "docs/educational/v1_1_streaming_guide.md"
+        ],
+        Examples: [
+          "livebooks/README.md",
+          "livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+          "livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+          "livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
+          "livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
+          "livebooks/05_finance/05_01_tick_data_cube.livemd",
+          "livebooks/broadway_pipeline.livemd",
+          "livebooks/nx_streaming.livemd",
+          "livebooks/zarr_fundamentals.livemd",
+          "livebooks/earthmover_datacube.livemd",
+          "livebooks/xarray_zarr_intro.livemd",
+          "livebooks/benchmarking_zarr.livemd",
+          "examples/README.md"
+        ],
+        Cookbooks: [
+          "livebooks/06_cookbook/06_01_100gb_arrays.livemd",
+          "livebooks/06_cookbook/06_02_1tb_arrays.livemd",
+          "livebooks/06_cookbook/06_03_image_archives.livemd",
+          "livebooks/06_cookbook/06_04_ml_pipelines.livemd",
+          "livebooks/06_cookbook/06_05_geospatial.livemd",
+          "livebooks/06_cookbook/06_06_scientific_computing.livemd",
+          "livebooks/06_cookbook/06_07_distributed.livemd"
+        ],
+        Architecture: [
+          "docs/architecture_review.md",
+          "docs/gap_analysis.md",
+          "docs/v1_1_design.md",
+          "docs/cloud_storage_patterns.md"
+        ],
+        "Additional Documentation": [
+          "CHANGELOG.md",
+          "docs/ROADMAP.md",
+          "docs/ZARR_V3_STATUS.md",
+          "docs/INTEROPERABILITY.md",
+          "docs/SECURITY.md",
+          "docs/PERFORMANCE_IMPROVEMENTS.md",
+          "docs/V2_TO_V3_MIGRATION.md",
+
+          "benchmarks/README.md",
+          "docs/PRECOMPILATION.md",
+          "LICENSE"
+        ],
+        "Release Notes & Migration Guides": [
+          "docs/release_notes_v1_1_0.md",
+          "docs/release_notes_v1_2_0.md",
+          "docs/migration_guide_v1_1_0.md",
         ],
         Reference: [
           "guides/troubleshooting.md",
@@ -229,38 +301,6 @@ defmodule ExZarr.MixProject do
         ],
         Contributing: [
           "guides/contributing.md"
-        ],
-        "v1.1 Streaming": [
-          "migration_guide_v1_1_0.md",
-          "release_notes_v1_1_0.md",
-          "docs/v1_1_design.md",
-          "docs/cloud_storage_patterns.md",
-          "docs/educational/v1_1_streaming_guide.md",
-          "guides/telemetry.md"
-        ],
-        "v1.2 Interop & Ranges": [
-          "release_notes_v1_2_0.md",
-          "ROADMAP.md",
-          "ZARR_V3_STATUS.md"
-        ],
-        Cookbook: [
-          "docs/cookbook/README.md",
-          "docs/cookbook/100gb_arrays.md",
-          "docs/cookbook/1tb_arrays.md",
-          "docs/cookbook/image_archives.md",
-          "docs/cookbook/ml_pipelines.md",
-          "docs/cookbook/geospatial.md",
-          "docs/cookbook/scientific_computing.md",
-          "docs/cookbook/distributed.md"
-        ],
-        "Additional Documentation": [
-          "CHANGELOG.md",
-          "INTEROPERABILITY.md",
-          "LICENSE",
-          "PERFORMANCE_IMPROVEMENTS.md",
-          "SECURITY.md",
-          "docs/V2_TO_V3_MIGRATION.md",
-          "benchmarks/README.md"
         ]
       ],
       source_ref: "v#{@version}",
@@ -284,7 +324,7 @@ defmodule ExZarr.MixProject do
           setTimeout(function() {
             document.addEventListener('keydown', function handler(e2) {
               if (e2.key === 'h') {
-                window.location.href = 'readme.html';
+                window.location.href = 'what_is_zarr.html';
               }
               document.removeEventListener('keydown', handler);
             }, {once: true});
@@ -302,7 +342,7 @@ defmodule ExZarr.MixProject do
       {"compile --warnings-as-errors", :dev},
       {"format --check-formatted", :dev},
       {"credo --strict", :dev},
-      # {"doctor --full", :dev},
+      {"doctor --full --raise", :dev},
       {"sobelow --config", :dev},
       {"dialyzer", :dev},
       {"test --cover", :test},

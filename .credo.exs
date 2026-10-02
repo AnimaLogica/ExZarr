@@ -13,7 +13,7 @@
           ~r"/node_modules/"
         ]
       },
-      plugins: [],
+      plugins: [{ExSlop, []}],
       requires: [],
       strict: true,
       parse_timeout: 5000,
@@ -96,12 +96,16 @@
           {Credo.Check.Warning.UnusedStringOperation, []},
           {Credo.Check.Warning.UnusedTupleOperation, []},
           {Credo.Check.Warning.WrongTestFileExtension, []}
-        ],
+        ] ++ Enum.map(ExSlop.recommended_checks(), &{&1, []}),
         disabled: [
           # Disabled for scientific computing - long specs are OK
           {Credo.Check.Readability.Specs, []},
           # Disabled - we use TODO for future work
-          {Credo.Check.Design.TagTODO, []}
+          {Credo.Check.Design.TagTODO, []},
+          # Zarr metadata is JSON: atom and string keys are both valid (Jason)
+          {ExSlop.Check.Warning.DualKeyAccess, []},
+          # Chunk/shape tuples and short lists; length/1 is intentional and cheap here
+          {ExSlop.Check.Refactor.LengthComparison, []}
         ]
       }
     }

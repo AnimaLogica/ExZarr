@@ -896,5 +896,5 @@ iex> ExZarr.Array.get_slice(array, start: {0, 0}, stop: {5, 5})
 
 - [Elixir Error Handling](https://hexdocs.pm/elixir/try-catch-and-rescue.html)
 - [Telemetry Guide](telemetry.md)
-- [Security Guide](SECURITY.md)
+- [Security Guide](../docs/SECURITY.md)
 - [API Documentation](https://hexdocs.pm/ex_zarr)

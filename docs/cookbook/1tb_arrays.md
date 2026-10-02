@@ -1,18 +1,7 @@
-# Processing 1TB Zarr Arrays
+# 1tb_arrays
 
-For terabyte-scale arrays, combine streaming with Flow partitioning and
-checkpointed writes.
+This cookbook moved to a Livebook:
 
-```elixir
-{:ok, array} = ExZarr.open(path: "s3://bucket/petabyte-subset")
+[`livebooks/06_cookbook/06_02_1tb_arrays.livemd`](../../livebooks/06_cookbook/06_02_1tb_arrays.livemd)
 
-array
-|> ExZarr.Flow.chunk_flow(stages: System.schedulers_online())
-|> Flow.map(&compute_partial/1)
-|> Flow.reduce(fn -> %{} end, &merge_partials/2)
-|> Flow.emit(:state)
-|> Enum.to_list()
-```
-
-Use `write_stream/3` with checkpoints for ingestion pipelines that may restart.
-See [cloud_storage_patterns.md](../cloud_storage_patterns.md) for retry guidance.
+Open it in Livebook or via the **Cookbooks** section of `mix docs`.

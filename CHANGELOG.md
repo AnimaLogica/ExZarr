@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Precompiled Zig NIFs for `ExZarr.Codecs.ZigCodecs` via ZiglerPrecompiled
-  (Linux/macOS x86_64 + aarch64); see `PRECOMPILATION.md`
+  (Linux/macOS x86_64 + aarch64); see `docs/PRECOMPILATION.md`
 - Optional storage backend callbacks: `chunk_info/2`, `read_chunk_range/4`,
   conditional `read_chunk_range/5` (`if_match:`), `capabilities/1`, `put_layout/2`
 - `ExZarr.Storage.ObjectKeys` for centralized v2/v3 object naming, including
@@ -109,7 +109,7 @@ large-scale array processing on the BEAM.
 - `docs/cloud_storage_patterns.md`
 - `docs/cookbook/` starter recipes for large-array workflows
 - `livebooks/broadway_pipeline.livemd`, `livebooks/nx_streaming.livemd`
-- `release_notes_v1_1_0.md`, `migration_guide_v1_1_0.md`
+- `docs/release_notes_v1_1_0.md`, `docs/migration_guide_v1_1_0.md`
 
 #### Benchmarks
 - `benchmarks/streaming_bench.exs` for streaming throughput measurement
@@ -153,7 +153,7 @@ ExZarr 1.0.0 marks the first production-ready release with comprehensive testing
 - **Overall Coverage**: 80.3% (up from 76.3%), with 100% coverage on 6 critical modules
 
 #### Security & Documentation
-- **Security Policy**: Comprehensive `SECURITY.md` with 550+ lines
+- **Security Policy**: Comprehensive `docs/SECURITY.md` with 550+ lines
   - Vulnerability reporting process and timelines
   - Input validation best practices with code examples
   - Cloud authentication security patterns
@@ -495,7 +495,7 @@ None - Full backward compatibility maintained with v0.1.0, v0.3.0, and v0.4.0
 
 #### Documentation
 - Comprehensive module documentation with examples
-- `INTEROPERABILITY.md` guide for multi-language workflows
+- `docs/INTEROPERABILITY.md` guide for multi-language workflows
 - Interactive demo script (`examples/python_interop_demo.exs`)
 - Integration test documentation (`test/support/README.md`)
 - Python helper scripts for testing

@@ -61,4 +61,4 @@ EX_ZARR_BUILD=1 mix zigler_precompiled.build \
 ```
 
 Replace the target with your host triple from
-`ZiglerPrecompiled.current_target_triple/0`.
+`ZiglerPrecompiled.current_target_triple()`.

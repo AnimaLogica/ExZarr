@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:ex_zarr, "~> 1.0"},
+  {:ex_zarr, path: Path.join(__DIR__, ".."), override: true},
   {:nx, "~> 0.7"},
   {:kino, "~> 0.13"},
   {:kino_vega_lite, "~> 0.1"}
@@ -84,8 +84,12 @@ tensor =
   Nx.iota({1000, 1000}, type: {:f, 64})
   |> Nx.divide(1000.0)
 
-# Write tensor to Zarr array
-:ok = ExZarr.Nx.to_zarr(tensor, array)
+# Write tensor bytes into the existing array
+:ok =
+  ExZarr.Array.set_slice(array, Nx.to_binary(tensor),
+    start: {0, 0},
+    stop: {1000, 1000}
+  )
 
 IO.puts("Data written to array")
 IO.puts("Tensor shape: #{inspect(Nx.shape(tensor))}")
@@ -107,12 +111,18 @@ Zarr's power lies in reading subsets without loading the entire array.
 
 ```elixir
 # Read a small slice: rows 100-200, columns 300-400
-{:ok, slice} = ExZarr.slice(array, {100..199, 300..399})
+{:ok, slice_bin} =
+  ExZarr.Array.get_slice(array, start: {100, 300}, stop: {200, 400})
+
+slice =
+  slice_bin
+  |> Nx.from_binary({:f, 64})
+  |> Nx.reshape({100, 100})
 
 IO.puts("Slice shape: #{inspect(Nx.shape(slice))}")
 IO.puts("Slice type: #{inspect(Nx.type(slice))}")
 IO.puts("\nFirst 5x5 elements of slice:")
-IO.inspect(slice[0..4, 0..4])
+IO.inspect(slice[[0..4, 0..4]])
 ```
 
 **Chunk-Aware Reading:**
@@ -127,7 +137,13 @@ Try different slices to see which chunks are accessed:
 
 ```elixir
 # This slice spans 4 chunks (2x2 region)
-{:ok, multi_chunk_slice} = ExZarr.slice(array, {50..149, 50..149})
+{:ok, multi_bin} =
+  ExZarr.Array.get_slice(array, start: {50, 50}, stop: {150, 150})
+
+multi_chunk_slice =
+  multi_bin
+  |> Nx.from_binary({:f, 64})
+  |> Nx.reshape({100, 100})
 
 IO.puts("Multi-chunk slice shape: #{inspect(Nx.shape(multi_chunk_slice))}")
 IO.puts("This slice required reading 4 chunks (2x2 grid)")
@@ -144,7 +160,7 @@ defmodule ZarrInspector do
   """
 
   def format_metadata(array) do
-    metadata = ExZarr.metadata(array)
+    metadata = array.metadata
 
     """
     ## Zarr Array Metadata
@@ -245,12 +261,18 @@ Visualizing array data helps understand structure and values. Let's create a hea
 alias VegaLite, as: Vl
 
 # Read a 50x50 slice for visualization
-{:ok, viz_slice} = ExZarr.slice(array, {200..249, 400..449})
+{:ok, viz_bin} =
+  ExZarr.Array.get_slice(array, start: {200, 400}, stop: {250, 450})
+
+viz_slice =
+  viz_bin
+  |> Nx.from_binary({:f, 64})
+  |> Nx.reshape({50, 50})
 
 # Convert to list of points for VegaLite
 data =
   for i <- 0..49, j <- 0..49 do
-    value = Nx.to_number(viz_slice[i][j])
+    value = Nx.to_number(viz_slice[[i, j]])
     %{x: j, y: i, value: value}
   end
 
@@ -307,9 +329,11 @@ Now experiment with different chunk sizes to understand their impact.
 
 # Write same data to all three
 tensor = Nx.iota({1000, 1000}, type: {:f, 64})
-ExZarr.Nx.to_zarr(tensor, array_large_chunks)
-ExZarr.Nx.to_zarr(tensor, array_medium_chunks)
-ExZarr.Nx.to_zarr(tensor, array_small_chunks)
+binary = Nx.to_binary(tensor)
+
+:ok = ExZarr.Array.set_slice(array_large_chunks, binary, start: {0, 0}, stop: {1000, 1000})
+:ok = ExZarr.Array.set_slice(array_medium_chunks, binary, start: {0, 0}, stop: {1000, 1000})
+:ok = ExZarr.Array.set_slice(array_small_chunks, binary, start: {0, 0}, stop: {1000, 1000})
 
 IO.puts("Created three arrays with different chunk sizes")
 ```
@@ -368,18 +392,6 @@ Kino.Markdown.new(comparison)
 # Demonstrate access pattern impact
 # Reading a small 50x50 region from different configurations
 
-read_region = fn array, label ->
-  start_time = System.monotonic_time(:microsecond)
-  {:ok, _slice} = ExZarr.slice(array, {100..149, 100..149})
-  end_time = System.monotonic_time(:microsecond)
-  elapsed = end_time - start_time
-
-  metadata = ExZarr.metadata(array)
-  chunk_count = calculate_chunks_accessed(metadata.chunks, {100..149, 100..149})
-
-  {label, elapsed, chunk_count}
-end
-
 calculate_chunks_accessed = fn chunks, {row_range, col_range} ->
   {chunk_rows, chunk_cols} = chunks
 
@@ -389,6 +401,21 @@ calculate_chunks_accessed = fn chunks, {row_range, col_range} ->
   end_col = div(col_range.last, chunk_cols)
 
   (end_row - start_row + 1) * (end_col - start_col + 1)
+end
+
+read_region = fn array, label ->
+  start_time = System.monotonic_time(:microsecond)
+
+  {:ok, _slice} =
+    ExZarr.Array.get_slice(array, start: {100, 100}, stop: {150, 150})
+
+  end_time = System.monotonic_time(:microsecond)
+  elapsed = end_time - start_time
+
+  metadata = array.metadata
+  chunk_count = calculate_chunks_accessed.(metadata.chunks, {100..149, 100..149})
+
+  {label, elapsed, chunk_count}
 end
 
 results = [
@@ -436,9 +463,9 @@ You've learned the fundamentals of Zarr:
 **ExZarr Operations:**
 
 - `ExZarr.create/1`: Create arrays with shape, dtype, chunks
-- `ExZarr.Nx.to_zarr/2`: Write Nx tensors to arrays
-- `ExZarr.slice/2`: Read array subsets
-- `ExZarr.metadata/1`: Inspect array structure
+- `ExZarr.Array.set_slice/3`: Write binary data into array regions
+- `ExZarr.Array.get_slice/2`: Read array subsets
+- `array.metadata`: Inspect array structure
 
 **Chunk Size Considerations:**
 

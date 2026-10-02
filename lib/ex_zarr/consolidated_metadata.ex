@@ -322,10 +322,7 @@ defmodule ExZarr.ConsolidatedMetadata do
   end
 
   defp write_consolidated_file(path, json) do
-    case File.write(path, json) do
-      :ok -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    File.write(path, json)
   end
 
   defp read_consolidated_file(base_path) do

@@ -60,7 +60,7 @@ defmodule ExZarr do
       # z = zarr.open_array('/shared/data', mode='r')
       # print(z.shape)  # (1000, 1000)
 
-  See `INTEROPERABILITY.md` for detailed examples and guidelines.
+  See `docs/INTEROPERABILITY.md` for detailed examples and guidelines.
 
   ## Data Types
 

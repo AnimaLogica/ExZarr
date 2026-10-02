@@ -1,49 +1,7 @@
-# Machine Learning Pipelines with ExZarr
+# ml_pipelines
 
-## Streaming Tensors from Chunks
+This cookbook moved to a Livebook:
 
-```elixir
-{:ok, array} = ExZarr.open(path: "/data/training_features")
+[`livebooks/06_cookbook/06_04_ml_pipelines.livemd`](../../livebooks/06_cookbook/06_04_ml_pipelines.livemd)
 
-batches =
-  array
-  |> ExZarr.Array.stream_chunks(concurrency: 4)
-  |> Stream.map(fn {_index, data} -> Nx.from_binary(data, {:f, 32}) end)
-  |> Stream.chunk_every(32)
-  |> Enum.to_list()
-```
-
-## Using DataLoader
-
-For sample-level batching with shuffle:
-
-```elixir
-{:ok, array} = ExZarr.open(path: "/data/features")
-
-array
-|> ExZarr.Nx.DataLoader.shuffled_batch_stream(64, seed: 42)
-|> Enum.each(fn {:ok, batch} -> train_step(model, batch) end)
-```
-
-## Broadway Pipeline
-
-For production training data preparation:
-
-```elixir
-defmodule MyApp.TrainingPipeline do
-  use Broadway
-
-  def start_link(array) do
-    ExZarr.Broadway.start_chunk_pipeline(__MODULE__, array,
-      concurrency: System.schedulers_online(),
-      stream_opts: [ordered: false]
-    )
-  end
-
-  @impl Broadway
-  def handle_message(_processor, %{data: {_index, data}} = message, _ctx) do
-    tensor = Nx.from_binary(data, {:f, 32}) |> normalize()
-    Broadway.Message.put_data(message, tensor)
-  end
-end
-```
+Open it in Livebook or via the **Cookbooks** section of `mix docs`.

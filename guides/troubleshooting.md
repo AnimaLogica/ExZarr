@@ -1283,7 +1283,7 @@ Before reporting issues, check existing resources:
 - **API Documentation**: [https://hexdocs.pm/ex_zarr](https://hexdocs.pm/ex_zarr)
 - **Guides**: Comprehensive guides covering most scenarios
   - [Installation Guide](../README.md#installation)
-  - [Quickstart Guide](quickstart.md)
+  - [Introduction](introduction.md)
   - [Performance Guide](performance.md)
   - [Compression Guide](compression_codecs.md)
   - [Python Interop Guide](python_interop.md)

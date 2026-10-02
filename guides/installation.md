@@ -636,7 +636,7 @@ test:
 
 Now that ExZarr is installed:
 
-1. **Try the Quickstart**: See [Quickstart Guide](quickstart.md) for a 5-minute working example
+1. **Try the Introduction**: See [Introduction](introduction.md) for a 5-minute working example
 2. **Learn Core Concepts**: Understand chunking and codecs in [Core Concepts Guide](core_concepts.md)
 3. **Configure Storage**: Set up S3 or other backends in [Storage Providers Guide](storage_providers.md)
 4. **Optimize Performance**: Tune chunk sizes and compression in [Performance Guide](performance.md)

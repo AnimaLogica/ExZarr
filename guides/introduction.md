@@ -1,4 +1,4 @@
-# Quickstart
+# Introduction
 
 Get up and running with ExZarr in under 5 minutes. This guide shows you how to create an array, write data, read it back, and inspect metadata using the simplest possible setup.
 

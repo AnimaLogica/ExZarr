@@ -110,7 +110,7 @@ defmodule ExZarr.PythonIntegrationTest do
 
   ## Related Documentation
 
-  - See `INTEROPERABILITY.md` for user-facing compatibility guide
+  - See `docs/INTEROPERABILITY.md` for user-facing compatibility guide
   - See `test/support/README.md` for helper script documentation
   - See `test/support/zarr_python_helper.py` for implementation details
   """
@@ -347,17 +347,8 @@ defmodule ExZarr.PythonIntegrationTest do
         py_dtype = result["metadata"]["dtype"]
         dtype_str = Atom.to_string(dtype)
 
-        # Normalize dtype strings for comparison
-        expected_base =
-          case dtype_str do
-            "uint" <> bits -> "uint" <> bits
-            "int" <> bits -> "int" <> bits
-            "float" <> bits -> "float" <> bits
-            other -> other
-          end
-
-        assert String.contains?(py_dtype, expected_base),
-               "Dtype mismatch: Python sees #{py_dtype}, expected something containing #{expected_base}"
+        assert String.contains?(py_dtype, dtype_str),
+               "Dtype mismatch: Python sees #{py_dtype}, expected something containing #{dtype_str}"
       end
     end
 

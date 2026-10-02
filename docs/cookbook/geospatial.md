@@ -1,17 +1,7 @@
-# Geospatial Zarr Datasets
+# geospatial
 
-Climate and earth observation datasets typically use `(time, lat, lon)` layouts.
+This cookbook moved to a Livebook:
 
-```elixir
-# Stream time steps
-array
-|> ExZarr.Array.stream_slices(0,
-  start: {0, 0, 0},
-  stop: {365, 180, 360},
-  concurrency: 4
-)
-|> Enum.map(fn {start, data} -> {elem(start, 0), compute_anomaly(data)} end)
-```
+[`livebooks/06_cookbook/06_05_geospatial.livemd`](../../livebooks/06_cookbook/06_05_geospatial.livemd)
 
-For spatial window extraction, use `get_slice/2` with named dimensions on
-v3 arrays or explicit start/stop coordinates.
+Open it in Livebook or via the **Cookbooks** section of `mix docs`.
