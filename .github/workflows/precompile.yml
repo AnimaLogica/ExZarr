@@ -23,9 +23,9 @@ jobs:
       matrix:
         include:
           # Native builds — ZigCodecs dynamically links system compression libs
-          - { target: x86_64-linux-gnu, os: ubuntu-latest }
-          - { target: aarch64-linux-gnu, os: ubuntu-24.04-arm }
-          - { target: aarch64-macos-none, os: macos-15 }
+          # - { target: x86_64-linux-gnu, os: ubuntu-latest }
+          # - { target: aarch64-linux-gnu, os: ubuntu-24.04-arm }
+          # - { target: aarch64-macos-none, os: macos-15 }
           - { target: x86_64-windows-gnu, os: windows-latest }
 
     steps:
@@ -57,8 +57,13 @@ jobs:
             mingw-w64-ucrt-x86_64-blosc
             mingw-w64-ucrt-x86_64-bzip2
             mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-cc
 
-      - uses: goto-bus-stop/setup-zig@v2
+      # Do not install a second Zig on Windows: setup-zig + mix zig.get with a
+      # shared ZIG_*_CACHE_DIR causes translate-c CacheCheckFailed on erl_nif_win.h.
+      - name: Install Zig
+        if: runner.os != 'Windows'
+        uses: goto-bus-stop/setup-zig@v2
         with:
           version: 0.16.0
 
@@ -72,8 +77,6 @@ jobs:
         env:
           EX_ZARR_BUILD: "1"
           ZIGLER_RELEASE_MODE: fast
-          ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
-          ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
           # Absolute Windows path from setup-msys2 (Git Bash maps bare /ucrt64
           # under Program Files\Git, which breaks Zig -L/-I).
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
@@ -100,6 +103,16 @@ jobs:
           mix local.rebar --force
           mix deps.get
           mix zig.get
+
+          # Point PATH at Zigler's cached Zig so Formatter and ZigCodecs share one binary
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            zig_bin="$(ls -1 "${LOCALAPPDATA}/zigler/Cache"/zig-*/zig.exe 2>/dev/null | head -1 || true)"
+            if [[ -n "${zig_bin}" ]]; then
+              export PATH="$(dirname "${zig_bin}"):${PATH}"
+              export ZIG_EXECUTABLE_PATH="${zig_bin}"
+              echo "Using Zig at ${zig_bin}"
+            fi
+          fi
 
           mix zigler_precompiled.build lib/ex_zarr/codecs/zig_codecs.ex \
             --target "${{ matrix.target }}" \
