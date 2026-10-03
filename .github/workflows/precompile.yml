@@ -129,6 +129,24 @@ jobs:
           mix local.rebar --force
           mix deps.get
 
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            # The zigler 0.16.0 Hex package only ships priv/beam, but on Windows
+            # zigler translate-c's priv/erl_nif_win/erl_nif_win.h. Zig reports the
+            # missing file as "translate-c failure ... CacheCheckFailed".
+            # Restore the headers from the commit tagged 0.16.0 (keep in sync
+            # with the zigler version in mix.lock).
+            zigler_sha=57813d3f571b1fadffe8d1f926f4fe3cd81747dc
+            grep -q '"zigler": {:hex, :zigler, "0.16.0"' mix.lock \
+              || { echo "zigler is no longer 0.16.0; update zigler_sha" >&2; exit 1; }
+            win_dir=deps/zigler/priv/erl_nif_win
+            mkdir -p "${win_dir}"
+            for header in erl_nif_win.h erl_nif_api_funcs_win.h; do
+              curl -fsSL --retry 3 -o "${win_dir}/${header}" \
+                "https://raw.githubusercontent.com/E-xyza/zigler/${zigler_sha}/priv/erl_nif_win/${header}"
+            done
+            ls -l "${win_dir}"
+          fi
+
           # Prove Elixir can see the pinned Zig (catches Git Bash path bugs)
           mix run -e 'path = System.get_env("ZIG_EXECUTABLE_PATH"); unless path && File.exists?(path), do: raise("ZIG_EXECUTABLE_PATH not visible to Elixir: #{inspect(path)}")'
 
