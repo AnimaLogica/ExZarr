@@ -41,6 +41,9 @@ Use this checklist when preparing and publishing the release.
 
 ### Precompiled NIFs
 - [ ] Wait for `.github/workflows/precompile.yml` to attach `.tar.gz` assets to the GitHub Release
+  (targets: linux x86_64/arm64, macOS arm64, Windows x86_64)
+- [ ] If a tag already exists and the workflow was fixed after tagging: push the fix, then
+  `gh workflow run "Build precompiled NIFs" -f release_tag=v1.2.0`
 - [ ] Generate checksums:
   ```bash
   EX_ZARR_BUILD=1 mix deps.get

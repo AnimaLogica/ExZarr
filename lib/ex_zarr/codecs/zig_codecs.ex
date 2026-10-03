@@ -60,17 +60,9 @@ defmodule ExZarr.Codecs.ZigCodecs do
                    __DIR__
                  )
 
-  # Get library/include paths from configuration (supports environment variable overrides)
-  # On Linux, library_dirs/include_dirs can be empty as the toolchain finds system paths
-  @library_dirs (case :os.type() do
-                   {:unix, :darwin} -> CompressionConfig.library_dirs()
-                   _ -> []
-                 end)
-
-  @include_dirs (case :os.type() do
-                   {:unix, :darwin} -> CompressionConfig.include_dirs()
-                   _ -> []
-                 end)
+  # Homebrew / COMPRESSION_*_DIRS / platform defaults (see CompressionConfig)
+  @library_dirs CompressionConfig.library_dirs()
+  @include_dirs CompressionConfig.include_dirs()
 
   @force_build System.get_env("EX_ZARR_BUILD") in ["1", "true"] or
                  not File.exists?(@checksum_file) or
@@ -86,7 +78,7 @@ defmodule ExZarr.Codecs.ZigCodecs do
       x86_64-linux-gnu
       aarch64-linux-gnu
       aarch64-macos-none
-      x86_64-macos-none
+      x86_64-windows-gnu
     ),
     zig_code_path: "zig_codecs.zig",
     optimize: :env,

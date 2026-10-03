@@ -4,6 +4,13 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      # Attach built assets to an existing GitHub Release (needed when re-running
+      # after a workflow fix without moving the tag).
+      release_tag:
+        description: "Existing release tag to upload assets to (e.g. v1.2.0)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -15,11 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Native builds only — ZigCodecs dynamically links system compression libs
+          # Native builds — ZigCodecs dynamically links system compression libs
           - { target: x86_64-linux-gnu, os: ubuntu-latest }
           - { target: aarch64-linux-gnu, os: ubuntu-24.04-arm }
           - { target: aarch64-macos-none, os: macos-15 }
-          - { target: x86_64-macos-none, os: macos-13 }
+          - { target: x86_64-windows-gnu, os: windows-latest }
 
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +40,21 @@ jobs:
       - name: Install compression libraries (macOS)
         if: runner.os == 'macOS'
         run: brew install zstd lz4 snappy c-blosc bzip2
+
+      - name: Install MSYS2 compression libraries (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-lz4
+            mingw-w64-x86_64-snappy
+            mingw-w64-x86_64-c-blosc
+            mingw-w64-x86_64-bzip2
+            mingw-w64-x86_64-pkg-config
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
@@ -51,6 +73,16 @@ jobs:
           ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
           ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
         run: |
+          set -euo pipefail
+
+          # MSYS2 MinGW64 paths (semicolon sep — Windows drive letters contain ':')
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            prefix="${MSYSTEM_PREFIX:-/mingw64}"
+            export COMPRESSION_LIB_DIRS="${prefix}/lib"
+            export COMPRESSION_INCLUDE_DIRS="${prefix}/include"
+            export PATH="${prefix}/bin:${PATH}"
+          fi
+
           mix local.hex --force
           mix local.rebar --force
           mix deps.get
@@ -68,7 +100,8 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: artifacts/*.tar.gz
