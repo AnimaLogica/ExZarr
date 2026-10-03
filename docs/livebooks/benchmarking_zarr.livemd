@@ -2,8 +2,9 @@
 
 ```elixir
 Mix.install([
-  {:ex_zarr, "~> 1.0"},
-  {:nx, "~> 0.7"},
+  {:ex_zarr, "~> 1.2"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")}
+  {:nx, "~> 0.9"},
   {:kino, "~> 0.13"},
   {:kino_vega_lite, "~> 0.1"}
 ])
@@ -23,18 +24,18 @@ This notebook teaches benchmarking methodology for Zarr access patterns. The goa
 
 **What We Measure:**
 
-- **Sequential Access**: Reading data in storage order
-- **Random Access**: Reading scattered locations
-- **Chunk Size Impact**: How chunking affects performance
-- **Slice Patterns**: Different query shapes and their costs
+* **Sequential Access**: Reading data in storage order
+* **Random Access**: Reading scattered locations
+* **Chunk Size Impact**: How chunking affects performance
+* **Slice Patterns**: Different query shapes and their costs
 
 **What We Don't Measure:**
 
-- Network latency (cloud storage)
-- Compression/decompression overhead
-- Write performance
-- Concurrent access patterns
-- Cache effects in repeated runs
+* Network latency (cloud storage)
+* Compression/decompression overhead
+* Write performance
+* Concurrent access patterns
+* Cache effects in repeated runs
 
 **Learning Objectives:**
 
@@ -130,6 +131,18 @@ defmodule BenchmarkUtils do
     seconds = microseconds / 1_000_000
     megabytes / seconds
   end
+
+  @doc """
+  Read a slice using inclusive `Range` tuples (old ExZarr.slice/2 style).
+
+  Converts to `ExZarr.Array.get_slice/2` with exclusive `stop`.
+  """
+  def get_slice(array, ranges) when is_tuple(ranges) do
+    ranges_list = Tuple.to_list(ranges)
+    start = ranges_list |> Enum.map(& &1.first) |> List.to_tuple()
+    stop = ranges_list |> Enum.map(&(&1.last + 1)) |> List.to_tuple()
+    ExZarr.Array.get_slice(array, start: start, stop: stop)
+  end
 end
 
 IO.puts("Benchmark utilities loaded")
@@ -147,9 +160,25 @@ defmodule DatasetGenerator do
         storage: :memory
       )
 
-    # Generate data
-    data = Nx.random_uniform(shape, type: dtype)
-    :ok = ExZarr.Nx.to_zarr(data, array)
+    # Generate data (Nx 0.13+ uses Nx.Random, not Nx.random_uniform/2)
+    key = Nx.Random.key(System.unique_integer([:positive]))
+
+    nx_type =
+      case dtype do
+        :float32 -> :f32
+        :float64 -> :f64
+        :int32 -> :s32
+        :int64 -> :s64
+        other -> other
+      end
+
+    {data, _key} = Nx.Random.uniform(key, shape: shape, type: nx_type)
+
+    :ok =
+      ExZarr.Array.set_slice(array, Nx.to_binary(data),
+        start: Tuple.duplicate(0, tuple_size(shape)),
+        stop: shape
+      )
 
     array
   end
@@ -207,7 +236,7 @@ sequential_result =
   BenchmarkUtils.time_operation("Read 10 sequential 100x1000 rows", fn ->
     # Read 10 consecutive rows (spans multiple chunks vertically)
     for start_row <- [0, 100, 200, 300, 400, 500, 600, 700, 800, 900] do
-      {:ok, _slice} = ExZarr.slice(array_sequential, {start_row..(start_row + 99), 0..(cols - 1)})
+      {:ok, _slice} = BenchmarkUtils.get_slice(array_sequential, {start_row..(start_row + 99), 0..(cols - 1)})
     end
   end)
 
@@ -228,7 +257,7 @@ random_rows = for _ <- 1..10, do: :rand.uniform(900)
 random_result =
   BenchmarkUtils.time_operation("Read 10 random 100x1000 rows", fn ->
     for start_row <- random_rows do
-      {:ok, _slice} = ExZarr.slice(array_sequential, {start_row..(start_row + 99), 0..(cols - 1)})
+      {:ok, _slice} = BenchmarkUtils.get_slice(array_sequential, {start_row..(start_row + 99), 0..(cols - 1)})
     end
   end)
 
@@ -297,7 +326,7 @@ defmodule ChunkSizeExperiment do
           BenchmarkUtils.time_operation(
             "Chunk #{chunk_size}x#{chunk_size}",
             fn ->
-              {:ok, _slice} = ExZarr.slice(array, {0..(slice_rows - 1), 0..(slice_cols - 1)})
+              {:ok, _slice} = BenchmarkUtils.get_slice(array, {0..(slice_rows - 1), 0..(slice_cols - 1)})
             end
           )
 
@@ -441,7 +470,7 @@ defmodule ComprehensiveBenchmark do
     # 1. Point read
     point_result =
       BenchmarkUtils.time_operation("Point read (1x1)", fn ->
-        {:ok, _} = ExZarr.slice(array, {100..100, 100..100})
+        {:ok, _} = BenchmarkUtils.get_slice(array, {100..100, 100..100})
       end)
 
     results = [point_result | results]
@@ -449,7 +478,7 @@ defmodule ComprehensiveBenchmark do
     # 2. Small slice
     small_result =
       BenchmarkUtils.time_operation("Small slice (50x50)", fn ->
-        {:ok, _} = ExZarr.slice(array, {100..149, 100..149})
+        {:ok, _} = BenchmarkUtils.get_slice(array, {100..149, 100..149})
       end)
 
     results = [small_result | results]
@@ -457,7 +486,7 @@ defmodule ComprehensiveBenchmark do
     # 3. Medium slice
     medium_result =
       BenchmarkUtils.time_operation("Medium slice (500x500)", fn ->
-        {:ok, _} = ExZarr.slice(array, {100..599, 100..599})
+        {:ok, _} = BenchmarkUtils.get_slice(array, {100..599, 100..599})
       end)
 
     results = [medium_result | results]
@@ -465,7 +494,7 @@ defmodule ComprehensiveBenchmark do
     # 4. Row slice
     row_result =
       BenchmarkUtils.time_operation("Row slice (1x5000)", fn ->
-        {:ok, _} = ExZarr.slice(array, {100..100, 0..4999})
+        {:ok, _} = BenchmarkUtils.get_slice(array, {100..100, 0..4999})
       end)
 
     results = [row_result | results]
@@ -473,7 +502,7 @@ defmodule ComprehensiveBenchmark do
     # 5. Column slice
     col_result =
       BenchmarkUtils.time_operation("Column slice (5000x1)", fn ->
-        {:ok, _} = ExZarr.slice(array, {0..4999, 100..100})
+        {:ok, _} = BenchmarkUtils.get_slice(array, {0..4999, 100..100})
       end)
 
     results = [col_result | results]
@@ -481,7 +510,7 @@ defmodule ComprehensiveBenchmark do
     # 6. Full array read
     full_result =
       BenchmarkUtils.time_operation("Full array (5000x5000)", fn ->
-        {:ok, _} = ExZarr.slice(array, {0..4999, 0..4999})
+        {:ok, _} = BenchmarkUtils.get_slice(array, {0..4999, 0..4999})
       end)
 
     results = [full_result | results]
@@ -512,40 +541,42 @@ comprehensive_table =
 Kino.DataTable.new(comprehensive_table)
 ```
 
-```elixir
-# Interpretation guide
-interpretation = """
-## Interpretation Guide
+### Interpretation Guide
 
-### What These Numbers Mean
+#### What These Numbers Mean
 
 **Absolute Values:**
-- System-dependent (CPU, memory, OS)
-- Memory backend is unrealistically fast
-- Don't compare across machines or environments
-- Don't use for production capacity planning
+
+* System-dependent (CPU, memory, OS)
+* Memory backend is unrealistically fast
+* Don't compare across machines or environments
+* Don't use for production capacity planning
 
 **Relative Patterns:**
-- Compare ratios, not absolute times
-- Identify trends (linear, logarithmic, exponential)
-- Understand access pattern characteristics
-- Guide chunk size selection
 
-### Common Misinterpretations
+* Compare ratios, not absolute times
+* Identify trends (linear, logarithmic, exponential)
+* Understand access pattern characteristics
+* Guide chunk size selection
+
+#### Common Misinterpretations
 
 **Mistake 1: "Zarr is faster than Parquet"**
-- Wrong: Format speed depends on use case, implementation, and environment
-- Better: "For this access pattern, chunked formats may be advantageous"
+
+* Wrong: Format speed depends on use case, implementation, and environment
+* Better: "For this access pattern, chunked formats may be advantageous"
 
 **Mistake 2: "Larger chunks are always better"**
-- Wrong: Chunk size is access-pattern dependent
-- Better: "For our typical queries, 250×250 chunks balance granularity and overhead"
+
+* Wrong: Chunk size is access-pattern dependent
+* Better: "For our typical queries, 250×250 chunks balance granularity and overhead"
 
 **Mistake 3: "These benchmarks prove production performance"**
-- Wrong: Synthetic data on memory backend doesn't reflect reality
-- Better: "These experiments help understand trade-offs; validate with real workloads"
 
-### What to Measure in Production
+* Wrong: Synthetic data on memory backend doesn't reflect reality
+* Better: "These experiments help understand trade-offs; validate with real workloads"
+
+#### What to Measure in Production
 
 1. **End-to-end latency**: Including network, caching, queuing
 2. **Percentiles**: P50, P95, P99 (not just mean)
@@ -553,15 +584,16 @@ interpretation = """
 4. **Cost**: Cloud storage requests and data transfer
 5. **Real queries**: Actual user access patterns, not synthetic
 
-### Red Flags
+#### Red Flags
 
 Be skeptical if benchmarks show:
-- 100x improvements (usually measurement error)
-- Perfect scaling (real systems have overhead)
-- Zero variance (suspicious statistical artifact)
-- Comparisons without error bars (ignoring uncertainty)
 
-### Designing Better Benchmarks
+* 100x improvements (usually measurement error)
+* Perfect scaling (real systems have overhead)
+* Zero variance (suspicious statistical artifact)
+* Comparisons without error bars (ignoring uncertainty)
+
+#### Designing Better Benchmarks
 
 1. **Use real data**: Or data with similar statistical properties
 2. **Measure what matters**: Focus on your actual use case
@@ -570,126 +602,127 @@ Be skeptical if benchmarks show:
 5. **Document everything**: Versions, settings, environment
 6. **Warm up**: First run often slower (caching, JIT)
 7. **Repeat**: Multiple runs reduce measurement noise
-"""
-
-Kino.Markdown.new(interpretation)
-```
 
 ## Conceptual Comparison: Zarr vs Parquet
 
 Since Elixir lacks mature Parquet libraries, we discuss conceptual trade-offs.
 
-```elixir
-format_comparison = """
-## Zarr vs Parquet: Conceptual Comparison
+<!-- livebook:{"break_markdown":true} -->
+
+### Zarr vs Parquet: Conceptual Comparison
 
 **Note:** This is a conceptual discussion. Actual performance requires implementation in comparable environments.
 
-### Storage Layout
+#### Storage Layout
 
 **Zarr:**
-- Chunked N-dimensional arrays
-- Regular grid structure
-- Each chunk is independently compressed
-- Metadata in JSON (separate from data)
+
+* Chunked N-dimensional arrays
+* Regular grid structure
+* Each chunk is independently compressed
+* Metadata in JSON (separate from data)
 
 **Parquet:**
-- Columnar storage for tables
-- Row groups and column chunks
-- Footer contains metadata
-- Optimized for tabular (2D) data
 
-### Ideal Use Cases
+* Columnar storage for tables
+* Row groups and column chunks
+* Footer contains metadata
+* Optimized for tabular (2D) data
+
+#### Ideal Use Cases
 
 **Zarr Advantages:**
-- Multi-dimensional arrays (3D, 4D, etc.)
-- Spatial/temporal subsets
-- Append-along-time workflows
-- Cloud-native access (object storage)
-- Parallel writes to different chunks
+
+* Multi-dimensional arrays (3D, 4D, etc.)
+* Spatial/temporal subsets
+* Append-along-time workflows
+* Cloud-native access (object storage)
+* Parallel writes to different chunks
 
 **Parquet Advantages:**
-- Tabular/relational data
-- Column-oriented analytics
-- SQL-style queries
-- Rich type system (nested structures)
-- Excellent ecosystem (Spark, Pandas, Arrow)
 
-### Access Pattern Performance
+* Tabular/relational data
+* Column-oriented analytics
+* SQL-style queries
+* Rich type system (nested structures)
+* Excellent ecosystem (Spark, Pandas, Arrow)
 
-| Pattern | Zarr | Parquet | Notes |
-|---------|------|---------|-------|
-| Read subset of columns | Moderate | Excellent | Parquet column pruning |
-| Read spatial region | Excellent | Poor | Zarr chunks align spatially |
-| Time series (one location) | Moderate | Poor | Depends on chunk layout |
-| Full table scan | Good | Excellent | Parquet columnar compression |
-| Random point access | Moderate | Poor | Both require chunk/row group load |
-| Append rows | Moderate | Good | Both support append |
-| Update values | Poor | Poor | Both immutable by design |
+#### Access Pattern Performance
 
-### Compression
+| Pattern                    | Zarr      | Parquet   | Notes                             |
+| -------------------------- | --------- | --------- | --------------------------------- |
+| Read subset of columns     | Moderate  | Excellent | Parquet column pruning            |
+| Read spatial region        | Excellent | Poor      | Zarr chunks align spatially       |
+| Time series (one location) | Moderate  | Poor      | Depends on chunk layout           |
+| Full table scan            | Good      | Excellent | Parquet columnar compression      |
+| Random point access        | Moderate  | Poor      | Both require chunk/row group load |
+| Append rows                | Moderate  | Good      | Both support append               |
+| Update values              | Poor      | Poor      | Both immutable by design          |
 
-**Zarr:**
-- Per-chunk compression
-- Flexible codec pipeline
-- Blosc, Zstd, LZ4, Gzip options
-- Good for floating-point arrays
-
-**Parquet:**
-- Per-column-chunk compression
-- Dictionary encoding
-- Run-length encoding
-- Excellent for categorical/string data
-
-### Metadata
+#### Compression
 
 **Zarr:**
-- Flexible JSON attributes
-- Dimension names external (or in attrs)
-- Coordinate arrays stored separately
-- Group hierarchy for organization
+
+* Per-chunk compression
+* Flexible codec pipeline
+* Blosc, Zstd, LZ4, Gzip options
+* Good for floating-point arrays
 
 **Parquet:**
-- Schema in footer
-- Rich type information
-- Statistics per column chunk
-- No native multi-dimensional support
 
-### When to Choose Zarr
+* Per-column-chunk compression
+* Dictionary encoding
+* Run-length encoding
+* Excellent for categorical/string data
 
-- Multi-dimensional scientific data
-- Geospatial imagery, climate models
-- Need selective spatial access
-- Cloud-native workflows
-- Interoperability with Python/Julia/R zarr implementations
+#### Metadata
 
-### When to Choose Parquet
+**Zarr:**
 
-- Tabular/relational data
-- Analytics queries (group by, aggregations)
-- Integration with Spark, Presto, Athena
-- Strong typing requirements
-- Existing Parquet ecosystem
+* Flexible JSON attributes
+* Dimension names external (or in attrs)
+* Coordinate arrays stored separately
+* Group hierarchy for organization
 
-### When Either Works
+**Parquet:**
 
-- Time series data (design chunks appropriately)
-- Log data (if access patterns support either)
-- Archival storage (both compress well)
+* Schema in footer
+* Rich type information
+* Statistics per column chunk
+* No native multi-dimensional support
 
-### The Real Answer
+#### When to Choose Zarr
+
+* Multi-dimensional scientific data
+* Geospatial imagery, climate models
+* Need selective spatial access
+* Cloud-native workflows
+* Interoperability with Python/Julia/R zarr implementations
+
+#### When to Choose Parquet
+
+* Tabular/relational data
+* Analytics queries (group by, aggregations)
+* Integration with Spark, Presto, Athena
+* Strong typing requirements
+* Existing Parquet ecosystem
+
+#### When Either Works
+
+* Time series data (design chunks appropriately)
+* Log data (if access patterns support either)
+* Archival storage (both compress well)
+
+#### The Real Answer
 
 "It depends" — seriously. Benchmark with:
-- Your actual data
-- Your actual queries
-- Your actual infrastructure
-- Your actual team's expertise
+
+* Your actual data
+* Your actual queries
+* Your actual infrastructure
+* Your actual team's expertise
 
 Don't choose based on microbenchmarks or format wars. Choose based on your requirements.
-"""
-
-Kino.Markdown.new(format_comparison)
-```
 
 ## Benchmark Reproducibility
 
@@ -725,7 +758,7 @@ defmodule BenchmarkReport do
 
     ## Reproducibility Notes
 
-    - All data is synthetic (Nx.random_uniform)
+    - All data is synthetic (`Nx.Random.uniform/2`)
     - Memory backend used (no disk/network I/O)
     - Single-threaded execution
     - No concurrent load
@@ -788,17 +821,17 @@ This notebook taught benchmarking methodology for Zarr:
 
 **What We Learned:**
 
-- **Sequential vs Random**: Access patterns affect performance
-- **Chunk Size Trade-offs**: Balance granularity and overhead
-- **Benchmark Limitations**: Synthetic data and memory backend don't reflect production
-- **Reproducibility**: Detailed reporting enables verification
+* **Sequential vs Random**: Access patterns affect performance
+* **Chunk Size Trade-offs**: Balance granularity and overhead
+* **Benchmark Limitations**: Synthetic data and memory backend don't reflect production
+* **Reproducibility**: Detailed reporting enables verification
 
 **What We Didn't Learn:**
 
-- Absolute Zarr performance (environment-dependent)
-- Zarr vs Parquet in practice (needs real implementations)
-- Production characteristics (network, caching, concurrency)
-- Your specific use case (requires custom benchmarks)
+* Absolute Zarr performance (environment-dependent)
+* Zarr vs Parquet in practice (needs real implementations)
+* Production characteristics (network, caching, concurrency)
+* Your specific use case (requires custom benchmarks)
 
 **Best Practices:**
 
@@ -812,11 +845,11 @@ This notebook taught benchmarking methodology for Zarr:
 
 **Next Steps:**
 
-- Profile your actual workload
-- Test with real storage backends
-- Measure end-to-end latency
-- Consider operational costs
-- Validate with production traffic
+* Profile your actual workload
+* Test with real storage backends
+* Measure end-to-end latency
+* Consider operational costs
+* Validate with production traffic
 
 ## Open Questions
 

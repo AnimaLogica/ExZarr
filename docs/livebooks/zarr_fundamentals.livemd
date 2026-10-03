@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:ex_zarr, path: Path.join(__DIR__, "../.."), override: true},
+  {:ex_zarr, "~> 1.2"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../.."), override: true},
   {:nx, "~> 0.7"},
   {:kino, "~> 0.13"},
   {:kino_vega_lite, "~> 0.1"}
@@ -29,17 +30,17 @@ Binary formats are often language-specific. Moving data between Python, R, Julia
 
 Zarr divides arrays into regular chunks stored separately. Benefits:
 
-- **Selective Loading**: Read only the chunks you need
-- **Parallel I/O**: Multiple processes can read/write different chunks simultaneously
-- **Compression**: Each chunk compresses independently
-- **Language Agnostic**: Simple directory structure with JSON metadata
+* **Selective Loading**: Read only the chunks you need
+* **Parallel I/O**: Multiple processes can read/write different chunks simultaneously
+* **Compression**: Each chunk compresses independently
+* **Language Agnostic**: Simple directory structure with JSON metadata
 
 **Use Cases:**
 
-- Geospatial imagery (satellite data, climate models)
-- Microscopy (large 3D/4D volumes)
-- Machine learning (training datasets too large for memory)
-- Time series (sensor data, financial data)
+* Geospatial imagery (satellite data, climate models)
+* Microscopy (large 3D/4D volumes)
+* Machine learning (training datasets too large for memory)
+* Time series (sensor data, financial data)
 
 This notebook introduces Zarr's core concepts using ExZarr, the Elixir implementation.
 
@@ -68,9 +69,10 @@ IO.inspect(array, label: "Array struct")
 **Understanding Chunks:**
 
 With shape `{1000, 1000}` and chunks `{100, 100}`:
-- Total elements: 1,000,000
-- Chunk dimensions: 100 x 100 = 10,000 elements per chunk
-- Number of chunks: (1000/100) x (1000/100) = 100 chunks (10x10 grid)
+
+* Total elements: 1,000,000
+* Chunk dimensions: 100 x 100 = 10,000 elements per chunk
+* Number of chunks: (1000/100) x (1000/100) = 100 chunks (10x10 grid)
 
 Each chunk is stored and compressed independently.
 
@@ -128,10 +130,11 @@ IO.inspect(slice[[0..4, 0..4]])
 **Chunk-Aware Reading:**
 
 When reading `{100..199, 300..399}`:
-- Requested region spans 100x100 elements
-- With chunks of 100x100, only 1 chunk is read
-- Remaining 99 chunks stay on disk/memory
-- Result: 99x faster than reading full array
+
+* Requested region spans 100x100 elements
+* With chunks of 100x100, only 1 chunk is read
+* Remaining 99 chunks stay on disk/memory
+* Result: 99x faster than reading full array
 
 Try different slices to see which chunks are accessed:
 
@@ -444,10 +447,11 @@ end)
 **Your Turn:**
 
 Modify the exercise to:
-- Try different array shapes (e.g., 2000x500)
-- Experiment with non-square chunks (e.g., 200x50)
-- Test different slice regions
-- Observe chunk access patterns
+
+* Try different array shapes (e.g., 2000x500)
+* Experiment with non-square chunks (e.g., 200x50)
+* Test different slice regions
+* Observe chunk access patterns
 
 ## Recap
 
@@ -462,25 +466,25 @@ You've learned the fundamentals of Zarr:
 
 **ExZarr Operations:**
 
-- `ExZarr.create/1`: Create arrays with shape, dtype, chunks
-- `ExZarr.Array.set_slice/3`: Write binary data into array regions
-- `ExZarr.Array.get_slice/2`: Read array subsets
-- `array.metadata`: Inspect array structure
+* `ExZarr.create/1`: Create arrays with shape, dtype, chunks
+* `ExZarr.Array.set_slice/3`: Write binary data into array regions
+* `ExZarr.Array.get_slice/2`: Read array subsets
+* `array.metadata`: Inspect array structure
 
 **Chunk Size Considerations:**
 
-- Smaller chunks: better random access, more metadata
-- Larger chunks: better sequential access, fewer objects
-- Optimal size depends on use case and storage backend
-- Typical target: 10-100 MB per chunk
+* Smaller chunks: better random access, more metadata
+* Larger chunks: better sequential access, fewer objects
+* Optimal size depends on use case and storage backend
+* Typical target: 10-100 MB per chunk
 
 **Next Steps:**
 
-- Explore compression codecs (gzip, blosc, zstd)
-- Try cloud storage backends (S3, GCS)
-- Learn about Zarr groups and hierarchies
-- Investigate parallel I/O patterns
-- Compare Zarr v2 vs v3 formats
+* Explore compression codecs (gzip, blosc, zstd)
+* Try cloud storage backends (S3, GCS)
+* Learn about Zarr groups and hierarchies
+* Investigate parallel I/O patterns
+* Compare Zarr v2 vs v3 formats
 
 ## Open Questions
 

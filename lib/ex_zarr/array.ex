@@ -322,15 +322,18 @@ defmodule ExZarr.Array do
   @doc """
   Saves the array to storage.
 
-  When `:path` is provided, persists metadata **and** all chunk data to a
-  filesystem directory at that path (including arrays that were created with
-  `:memory` storage). Without `:path`, writes metadata to the array's current
-  storage backend only.
+  When `:path` is provided:
+  - For `:zip` arrays (or paths ending in `.zip`), persists a zip archive
+  - Otherwise persists a filesystem Zarr directory (including arrays that were
+    created with `:memory` storage)
+
+  Without `:path`, writes metadata to the array's current storage backend only
+  (for `:zip`, this flushes the in-memory cache to the configured zip path).
 
   ## Options
 
-  - `:path` - Directory to write a Zarr array to (creates `.zarray` / `zarr.json`
-    and copies chunks). Required for persisting in-memory arrays.
+  - `:path` - Filesystem directory or `.zip` archive path to persist to.
+    Required for persisting in-memory arrays.
 
   ## Examples
 
@@ -348,13 +351,40 @@ defmodule ExZarr.Array do
   def save(array, opts) do
     case Keyword.fetch(opts, :path) do
       {:ok, path} when is_binary(path) and path != "" ->
-        persist_to_filesystem(array, path, opts)
+        persist_to_path(array, path, opts)
 
       {:ok, _} ->
         {:error, :invalid_path}
 
       :error ->
         Storage.write_metadata(array.storage, array.metadata, opts)
+    end
+  end
+
+  defp persist_to_path(array, path, opts) do
+    if zip_persist_target?(array, path) do
+      persist_to_zip(array, path, opts)
+    else
+      persist_to_filesystem(array, path, opts)
+    end
+  end
+
+  defp zip_persist_target?(%{storage: %{backend: :zip}}, _path), do: true
+  defp zip_persist_target?(_array, path), do: String.ends_with?(path, ".zip")
+
+  defp persist_to_zip(array, path, opts) do
+    same_zip? = array.storage.backend == :zip and array.storage.path == path
+
+    if same_zip? do
+      Storage.write_metadata(array.storage, array.metadata, opts)
+    else
+      with {:ok, dest} <- Storage.init(%{storage_type: :zip, path: path}),
+           dest = Storage.put_layout(dest, storage_layout(array.metadata)),
+           {:ok, chunk_indices} <- Storage.list_chunks(array.storage),
+           :ok <- copy_chunks(array.storage, dest, chunk_indices) do
+        # Zip backend flushes the archive when metadata is written
+        Storage.write_metadata(dest, array.metadata, [])
+      end
     end
   end
 
@@ -389,7 +419,6 @@ defmodule ExZarr.Array do
   end
 
   defp normalize_write_result(:ok), do: :ok
-  defp normalize_write_result({:ok, _storage}), do: :ok
   defp normalize_write_result({:error, _} = error), do: error
 
   # Parse slice options - supports both numeric (:start, :stop, :step), maps, and named dimensions
