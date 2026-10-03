@@ -317,19 +317,26 @@ defmodule ExZarr.Codecs.CompressionConfigTest do
   end
 
   describe "environment variable parsing" do
-    test "handles colon-separated paths correctly" do
+    test "handles platform path lists correctly" do
       original = System.get_env("COMPRESSION_LIB_DIRS")
+      sep = if match?({:win32, _}, :os.type()), do: ";", else: ":"
 
       try do
-        # Test with various path separators
-        System.put_env("COMPRESSION_LIB_DIRS", "/path1:/path2:/path3")
+        System.put_env("COMPRESSION_LIB_DIRS", Enum.join(["/path1", "/path2", "/path3"], sep))
         assert CompressionConfig.library_dirs() == ["/path1", "/path2", "/path3"]
 
         System.put_env("COMPRESSION_LIB_DIRS", "/single/path")
         assert CompressionConfig.library_dirs() == ["/single/path"]
 
         System.put_env("COMPRESSION_LIB_DIRS", "")
-        assert CompressionConfig.library_dirs() == [""]
+        assert CompressionConfig.library_dirs() == []
+
+        System.put_env(
+          "COMPRESSION_LIB_DIRS",
+          Enum.join(["/path1", "", "/path2", ""], sep)
+        )
+
+        assert CompressionConfig.library_dirs() == ["/path1", "/path2"]
       after
         if original do
           System.put_env("COMPRESSION_LIB_DIRS", original)
