@@ -59,13 +59,16 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-cc
 
-      # One Zig on PATH for all platforms. Do NOT set ZIG_LOCAL_CACHE_DIR /
-      # ZIG_GLOBAL_CACHE_DIR — sharing those across setup-zig and mix zig.get
-      # caused translate-c CacheCheckFailed on Windows (erl_nif_win.h).
+      # Zigler 0.16 requires Zig 0.16 — do not pin to 0.15.x
       - name: Install Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
           version: 0.16.0
+
+      # Needed for zig translate-c -lc on Windows (MSVC libc)
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - uses: erlef/setup-beam@v1
         with:
@@ -80,11 +83,19 @@ jobs:
           # Absolute Windows path from setup-msys2 (Git Bash maps bare /ucrt64
           # under Program Files\Git, which breaks Zig -L/-I).
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+          RUNNER_TEMP: ${{ runner.temp }}
         run: |
           set -euo pipefail
 
-          # Pin Zigler to the setup-zig binary (avoid a second Zig + cache clash)
-          export ZIG_EXECUTABLE_PATH="$(command -v zig)"
+          # Pin ONE Zig. On Windows, `command -v zig` returns a Git Bash path
+          # (/c/...) that Elixir File.exists?/1 rejects — Zigler then ignores
+          # ZIG_EXECUTABLE_PATH and uses its own cached Zig. Use cygpath -m.
+          zig_bash="$(command -v zig)"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            export ZIG_EXECUTABLE_PATH="$(cygpath -m "${zig_bash}")"
+          else
+            export ZIG_EXECUTABLE_PATH="${zig_bash}"
+          fi
           echo "Using Zig at ${ZIG_EXECUTABLE_PATH}"
           zig version
 
@@ -102,11 +113,26 @@ jobs:
             test -d "${COMPRESSION_LIB_DIRS}"
             test -f "${COMPRESSION_LIB_DIRS}/libzstd.dll.a" \
               || test -f "${COMPRESSION_LIB_DIRS}/libzstd.a"
+
+            # Fresh Zig caches (default %LOCALAPPDATA%\zig was hitting CacheCheckFailed
+            # during translate-c of erl_nif_win.h). One Zig + clean temp dirs.
+            export ZIG_GLOBAL_CACHE_DIR="$(cygpath -m "${RUNNER_TEMP}")/zig-global-cache"
+            export ZIG_LOCAL_CACHE_DIR="$(cygpath -m "${RUNNER_TEMP}")/zig-local-cache"
+            rm -rf "${ZIG_GLOBAL_CACHE_DIR}" "${ZIG_LOCAL_CACHE_DIR}" .zig-cache \
+              "$(cygpath -u "${LOCALAPPDATA}")/zig" 2>/dev/null || true
+            mkdir -p "${ZIG_GLOBAL_CACHE_DIR}" "${ZIG_LOCAL_CACHE_DIR}"
+            echo "ZIG_GLOBAL_CACHE_DIR=${ZIG_GLOBAL_CACHE_DIR}"
+            echo "ZIG_LOCAL_CACHE_DIR=${ZIG_LOCAL_CACHE_DIR}"
           fi
 
           mix local.hex --force
           mix local.rebar --force
           mix deps.get
+
+          # Prove Elixir can see the pinned Zig (catches Git Bash path bugs)
+          mix run -e 'path = System.get_env("ZIG_EXECUTABLE_PATH"); unless path && File.exists?(path), do: raise("ZIG_EXECUTABLE_PATH not visible to Elixir: #{inspect(path)}")'
+
+          # Prefer the pinned setup-zig binary; still run zig.get for Zigler bookkeeping
           mix zig.get
 
           mix zigler_precompiled.build lib/ex_zarr/codecs/zig_codecs.ex \
