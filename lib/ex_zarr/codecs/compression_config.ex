@@ -49,7 +49,7 @@ defmodule ExZarr.Codecs.CompressionConfig do
   def library_dirs do
     case System.get_env("COMPRESSION_LIB_DIRS") do
       nil -> detect_library_dirs()
-      paths -> String.split(paths, ":")
+      paths -> split_path_list(paths)
     end
   end
 
@@ -62,7 +62,7 @@ defmodule ExZarr.Codecs.CompressionConfig do
   def include_dirs do
     case System.get_env("COMPRESSION_INCLUDE_DIRS") do
       nil -> detect_include_dirs()
-      paths -> String.split(paths, ":")
+      paths -> split_path_list(paths)
     end
   end
 
@@ -75,7 +75,7 @@ defmodule ExZarr.Codecs.CompressionConfig do
   def rpath_dirs do
     case System.get_env("COMPRESSION_LIB_DIRS") do
       nil -> detect_rpath_dirs()
-      paths -> String.split(paths, ":")
+      paths -> split_path_list(paths)
     end
   end
 
@@ -108,6 +108,20 @@ defmodule ExZarr.Codecs.CompressionConfig do
   end
 
   # Private functions
+
+  # Unix uses ':' ; Windows uses ';' so drive letters like C: are preserved.
+  defp split_path_list(paths) do
+    sep =
+      case :os.type() do
+        {:win32, _} -> ";"
+        _ -> ":"
+      end
+
+    paths
+    |> String.split(sep)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
 
   defp detect_library_dirs do
     case :os.type() do
