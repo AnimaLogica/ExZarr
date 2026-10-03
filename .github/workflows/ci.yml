@@ -224,3 +224,74 @@ jobs:
         run: |
           echo "Checking for undocumented public functions..."
           mix docs --warnings-as-errors
+
+  python-interop:
+    name: Python Interop (zarr ${{ matrix.zarr }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # zarr 2.x still supports Python 3.11
+          - zarr: "2.18.3"
+            python: "3.11"
+            major: 2
+            extra: "'numcodecs<0.16'"
+            suite: test/ex_zarr_python_integration_test.exs
+          # zarr >= 3.2 requires Python >= 3.12
+          - zarr: "3.2.1"
+            python: "3.12"
+            major: 3
+            extra: ""
+            suite: test/ex_zarr_v3_python_interop_test.exs
+          - zarr: "3.3.0"
+            python: "3.12"
+            major: 3
+            extra: ""
+            suite: test/ex_zarr_v3_python_interop_test.exs
+          - zarr: "3.4.0"
+            python: "3.12"
+            major: 3
+            extra: ""
+            suite: test/ex_zarr_v3_python_interop_test.exs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install zarr-python
+        run: |
+          python -m pip install --upgrade pip
+          pip install "zarr==${{ matrix.zarr }}" numpy ${{ matrix.extra }}
+      - name: Generate fixtures
+        run: |
+          python test/support/python_fixtures/generate_fixtures.py \
+            --out "${{ runner.temp }}/zarr_fixtures" \
+            --zarr-major ${{ matrix.major }}
+      - name: Install Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.5"
+          otp-version: "28.3.1"
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Verify Zig
+        run: |
+          echo "ZIG_EXECUTABLE_PATH=$(which zig)" >> "$GITHUB_ENV"
+          zig version
+      - run: mix deps.get
+      - name: Read zarr-python fixtures with ExZarr
+        env:
+          EXZARR_PYTHON_FIXTURES: ${{ runner.temp }}/zarr_fixtures
+        run: mix test --only python_fixtures
+      - name: Run ExZarr <-> zarr-python suite
+        run: mix test --include python ${{ matrix.suite }}
+      - name: Run showcase example
+        if: matrix.zarr == '3.4.0'
+        run: mix run examples/range_aware_sharded_nx.exs

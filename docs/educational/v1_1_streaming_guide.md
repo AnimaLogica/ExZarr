@@ -1,4 +1,4 @@
-# ExZarr v1.1.0 Streaming Learning Guide
+# Streaming Learning Guide
 
 ## Zarr Architecture
 

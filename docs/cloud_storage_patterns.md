@@ -1,4 +1,4 @@
-# Cloud Storage Patterns for ExZarr v1.1.0
+# Cloud Storage Patterns (v1.1.0)
 
 ## Overview
 
@@ -118,7 +118,7 @@ externally or use deterministic chunk indices.
 )
 ```
 
-- Connection string or managed identity via Azurex
+- Shared Key via `account_name` / `account_key`, or inject `azure_client:`
 - Monitor request rate limits on storage account
 
 ## Operational Considerations

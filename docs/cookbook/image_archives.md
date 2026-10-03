@@ -1,15 +1,7 @@
-# Image Archives in Zarr
+# image_archives
 
-Store image tiles as chunks and process with Broadway:
+This cookbook moved to a Livebook:
 
-```elixir
-array
-|> ExZarr.Array.stream_chunks(concurrency: 16, metadata: true)
-|> Stream.map(fn %{index: idx, data: tile} ->
-  {idx, process_tile(tile)}
-end)
-|> then(&ExZarr.Array.write_stream(output_array, &1, batch_size: 8))
-```
+[`livebooks/06_cookbook/06_03_image_archives.livemd`](../livebooks/06_cookbook/06_03_image_archives.livemd)
 
-Each chunk corresponds to a spatial tile. Use `metadata: true` to recover
-pixel bounds without separate coordinate math.
+Open it in Livebook or via the **Cookbooks** section of `mix docs`.

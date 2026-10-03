@@ -389,7 +389,7 @@ defmodule ExZarr.Storage.S3MockTest do
       assert :ok = S3.write_metadata(state, metadata_json, [])
 
       assert_receive {:ex_aws_request, operation}
-      assert operation.key == "data/arrays/.zarray"
+      assert operation.key == "data/arrays/zarr.json"
     end
 
     test "returns error on S3 failure" do

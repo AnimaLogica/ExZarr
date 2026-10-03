@@ -112,4 +112,19 @@ defmodule ExZarr.Storage.Backend.Memory do
     # Memory storage never "exists" on disk
     false
   end
+
+  @doc false
+  @impl true
+  def chunk_info(state, chunk_index) do
+    case read_chunk(state, chunk_index) do
+      {:ok, data} -> {:ok, %{size: byte_size(data)}}
+      error -> error
+    end
+  end
+
+  @doc false
+  @impl true
+  # Range reads use the generic full-read + slice fallback in
+  # ExZarr.Storage.Backend.read_range/6, which is free for in-memory data.
+  def capabilities(_state), do: MapSet.new([:range_read])
 end

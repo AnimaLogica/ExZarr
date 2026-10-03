@@ -1,4 +1,7 @@
-# ExZarr v1.1.0 Design Document
+# Design Document
+
+_as of: v1.1.0_
+
 
 ## Theme
 

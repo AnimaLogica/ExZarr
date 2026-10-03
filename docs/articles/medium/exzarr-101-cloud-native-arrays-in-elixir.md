@@ -1,4 +1,4 @@
-# ExZarr 101: Cloud‑native arrays in Elixir with Zarr v2
+# Cloud-native arrays in Elixir with Zarr v2
 
 Zarr is a storage format (and set of conventions) for **chunked, compressed, N‑dimensional arrays** that works well on local disks *and* on object stores (S3/GCS/Azure). ExZarr brings that model to Elixir so you can combine:
 
@@ -92,7 +92,7 @@ Now `vals` is a flat list (row-major).
 Chunk streaming is where Zarr starts to feel “cloud native”: you can process an array without loading it all.
 
 ```elixir
-ExZarr.Array.chunk_stream(a, parallel: 4, ordered: false)
+ExZarr.Array.chunk_stream(a, concurrency: 4, ordered: false)
 |> Stream.each(fn {chunk_index, bin} ->
   # do something with each chunk
   :ok

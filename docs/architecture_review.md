@@ -1,4 +1,4 @@
-# ExZarr v1.1.0 Architecture Review
+# Architecture Review
 
 ## Current State Assessment
 

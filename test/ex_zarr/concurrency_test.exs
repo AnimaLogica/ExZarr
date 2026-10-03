@@ -248,22 +248,25 @@ defmodule ExZarr.ConcurrencyTest do
       data = for i <- 0..9999, into: <<>>, do: <<i::32-little>>
       :ok = Array.set_slice(array, data, start: {0, 0}, stop: {100, 100})
 
+      # Clear cache stats so this test is self-contained
+      if Process.whereis(ExZarr.ChunkCache) do
+        :ok = ExZarr.ChunkCache.clear()
+      end
+
       # First read (cache miss)
-      {time1, _} =
-        :timer.tc(fn ->
-          Array.get_slice(array, start: {0, 0}, stop: {10, 10})
-        end)
+      assert {:ok, _} = Array.get_slice(array, start: {0, 0}, stop: {10, 10})
+      stats_after_miss = ExZarr.ChunkCache.stats()
 
       # Second read (cache hit)
-      {time2, _} =
-        :timer.tc(fn ->
-          Array.get_slice(array, start: {0, 0}, stop: {10, 10})
-        end)
+      assert {:ok, _} = Array.get_slice(array, start: {0, 0}, stop: {10, 10})
+      stats_after_hit = ExZarr.ChunkCache.stats()
 
-      # Cache hit should be faster (usually 10x or more)
-      # We use a conservative threshold to avoid flaky tests
-      assert time2 < time1 * 0.5,
-             "Cache hit (#{time2}μs) should be faster than miss (#{time1}μs)"
+      # Assert functional cache behavior rather than wall-clock timing
+      # (timing assertions are flaky on fast local disks / warm OS page cache).
+      assert stats_after_hit.hits > stats_after_miss.hits,
+             "expected a cache hit on the second read, got #{inspect(stats_after_hit)} after #{inspect(stats_after_miss)}"
+
+      assert stats_after_miss.misses >= 1
     end
 
     test "cache invalidation on write", %{tmp_dir: tmp_dir} do

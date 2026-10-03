@@ -65,7 +65,7 @@ defmodule ExZarr.DimensionNamesTest do
       assert msg =~ "must match shape dimensions"
     end
 
-    test "rejects duplicate dimension names" do
+    test "accepts duplicate dimension names as metadata" do
       metadata = %ExZarr.MetadataV3{
         zarr_format: 3,
         node_type: :array,
@@ -79,11 +79,27 @@ defmodule ExZarr.DimensionNamesTest do
         dimension_names: ["time", "time", "longitude"]
       }
 
-      assert {:error, {:invalid_dimension_names, msg}} = ExZarr.MetadataV3.validate(metadata)
-      assert msg =~ "Duplicate dimension names"
+      assert :ok = ExZarr.MetadataV3.validate(metadata)
     end
 
-    test "rejects invalid dimension name format" do
+    test "accepts unicode and spaced dimension names" do
+      metadata = %ExZarr.MetadataV3{
+        zarr_format: 3,
+        node_type: :array,
+        shape: {100, 200, 300},
+        data_type: "float64",
+        chunk_grid: %{name: "regular", configuration: %{chunk_shape: {10, 20, 30}}},
+        chunk_key_encoding: %{name: "default"},
+        codecs: [%{name: "bytes"}],
+        fill_value: 0.0,
+        attributes: %{},
+        dimension_names: ["Δt", "x coordinate", "a/b"]
+      }
+
+      assert :ok = ExZarr.MetadataV3.validate(metadata)
+    end
+
+    test "rejects non-string dimension name entries" do
       metadata = %ExZarr.MetadataV3{
         zarr_format: 3,
         node_type: :array,
@@ -94,7 +110,7 @@ defmodule ExZarr.DimensionNamesTest do
         codecs: [%{name: "bytes"}],
         fill_value: 0.0,
         attributes: %{},
-        dimension_names: ["time space", "latitude"]
+        dimension_names: [1, "latitude"]
       }
 
       assert {:error, {:invalid_dimension_names, msg}} = ExZarr.MetadataV3.validate(metadata)

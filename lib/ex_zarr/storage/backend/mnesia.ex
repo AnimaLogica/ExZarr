@@ -137,8 +137,9 @@ defmodule ExZarr.Storage.Backend.Mnesia do
 
             {:ok, state}
         end
-      rescue
-        _ -> {:error, :table_not_found}
+      catch
+        :exit, _ -> {:error, :table_not_found}
+        :error, _ -> {:error, :table_not_found}
       end
     end
   end

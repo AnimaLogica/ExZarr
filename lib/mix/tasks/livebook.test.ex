@@ -13,13 +13,13 @@ defmodule Mix.Tasks.Livebook.Test do
 
   Usage:
     mix livebook.test
-    mix livebook.test --paths "livebooks/**/*.livemd" --paths "docs/**/*.livemd"
+    mix livebook.test --paths "docs/livebooks/**/*.livemd" --paths "docs/**/*.livemd"
     mix livebook.test --pattern ExZarr --max 4 --timeout 300
     mix livebook.test --fail-on-warn
     mix livebook.test --skip-tag "livebook:test skip"
   """
 
-  @default_paths ["livebooks/**/*.livemd", "docs/**/*.livemd"]
+  @default_paths ["docs/livebooks/**/*.livemd", "docs/**/*.livemd"]
   @default_timeout_sec 300
   @default_max System.schedulers_online()
 
@@ -204,11 +204,17 @@ defmodule Mix.Tasks.Livebook.Test do
       project_root = File.cwd!()
 
       body_fixed =
-        String.replace(
-          body,
+        body
+        |> String.replace(
+          ~r/path: Path\.join\(__DIR__, "\.\.\/\.\.\/\.\."\)/,
+          "path: \"#{project_root}\""
+        )
+        |> String.replace(
           ~r/path: Path\.join\(__DIR__, "\.\.\/\.\."\)/,
           "path: \"#{project_root}\""
         )
+        |> String.replace(~r/path: Path\.join\(__DIR__, "\.\."\)/, "path: \"#{project_root}\"")
+        |> String.replace(~r/path: Path\.dirname\(__DIR__\)/, "path: \"#{project_root}\"")
 
       """
       # Generated from .livemd by mix livebook.test

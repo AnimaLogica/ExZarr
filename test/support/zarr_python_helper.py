@@ -151,7 +151,7 @@ def create_v3_array(path, shape, chunks, dtype, codecs=None):
         # Default codecs: bytes + gzip
         if codecs is None:
             codecs = [
-                {"name": "bytes"},
+                {"name": "bytes", "configuration": {"endian": "little"}},
                 {"name": "gzip", "configuration": {"level": 5}}
             ]
 
@@ -261,6 +261,25 @@ def verify_v3_array(path, expected_shape, expected_dtype, expected_checksum):
         return {'success': False, 'error': str(e)}
 
 
+def array_digest(path):
+    """Return shape, chunk/shard layout and SHA-256 of the C-order little-endian bytes."""
+    import hashlib
+
+    try:
+        z = zarr.open_array(path, mode='r')
+        data = np.ascontiguousarray(z[...])
+        little = data.astype(data.dtype.newbyteorder('<'))
+        return {
+            'success': True,
+            'shape': list(z.shape),
+            'chunks': list(z.chunks),
+            'shards': list(z.shards) if getattr(z, 'shards', None) else None,
+            'sha256': hashlib.sha256(little.tobytes()).hexdigest(),
+        }
+    except Exception as e:
+        return {'success': False, 'error': f'{type(e).__name__}: {e}'}
+
+
 def check_zarr_version():
     """Check if zarr-python supports v3."""
     try:
@@ -295,6 +314,10 @@ def main():
             dtype = sys.argv[5]
             result = create_v3_array(path, tuple(shape), tuple(chunks), dtype)
             print(json.dumps(result))
+
+        elif command == 'array_digest':
+            # array_digest <path>
+            print(json.dumps(array_digest(sys.argv[2])))
 
         elif command == 'read_v3_array':
             # read_v3_array <path>

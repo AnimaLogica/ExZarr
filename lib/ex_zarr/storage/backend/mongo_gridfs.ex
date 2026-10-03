@@ -266,14 +266,7 @@ defmodule ExZarr.Storage.Backend.MongoGridFS do
 
   defp gridfs_upload(conn, bucket, filename, data) do
     opts = [filename: filename]
-
-    case mongo_gridfs().upload(conn, data, opts, bucket: bucket) do
-      {:ok, file_id} ->
-        {:ok, file_id}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    mongo_gridfs().upload(conn, data, opts, bucket: bucket)
   end
 
   defp gridfs_download(conn, bucket, filename) do

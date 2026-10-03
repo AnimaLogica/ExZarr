@@ -50,6 +50,8 @@ defmodule ExZarr.Storage do
       {:ok, metadata} = ExZarr.Storage.read_metadata(storage)
   """
 
+  alias ExZarr.Storage.Backend
+
   @type backend :: :memory | :filesystem | :zip | :http | :s3
   @type t :: %__MODULE__{
           backend: backend(),
@@ -207,6 +209,87 @@ defmodule ExZarr.Storage do
 
       {:error, :not_found} ->
         {:error, {:unknown_backend, backend_id}}
+    end
+  end
+
+  @doc """
+  Reads a byte range from a chunk/shard object.
+
+  Uses native range support when the backend advertises `:range_read`,
+  otherwise falls back to a full read plus binary slicing. Pass
+  `if_match: etag` (from `chunk_info/2`) to make the read conditional on the
+  object version; see `t:ExZarr.Storage.Backend.range_opts/0`.
+  """
+  @spec read_chunk_range(t(), tuple(), non_neg_integer(), non_neg_integer(), keyword()) ::
+          {:ok, binary()} | {:error, term()}
+  def read_chunk_range(
+        %__MODULE__{backend: backend_id, state: backend_state},
+        chunk_index,
+        offset,
+        length,
+        opts \\ []
+      ) do
+    case ExZarr.Storage.Registry.get(backend_id) do
+      {:ok, backend_module} ->
+        Backend.read_range(
+          backend_module,
+          backend_state,
+          chunk_index,
+          offset,
+          length,
+          opts
+        )
+
+      {:error, :not_found} ->
+        {:error, {:unknown_backend, backend_id}}
+    end
+  end
+
+  @doc """
+  Returns chunk/shard object info (`%{size: n}`, plus `:etag` when known).
+
+  Returns `{:error, :unsupported}` for backends without `chunk_info/2`.
+  """
+  @spec chunk_info(t(), tuple()) :: {:ok, map()} | {:error, term()}
+  def chunk_info(%__MODULE__{backend: backend_id, state: backend_state}, chunk_index) do
+    case ExZarr.Storage.Registry.get(backend_id) do
+      {:ok, backend_module} ->
+        if function_exported?(backend_module, :chunk_info, 2) do
+          backend_module.chunk_info(backend_state, chunk_index)
+        else
+          {:error, :unsupported}
+        end
+
+      {:error, :not_found} ->
+        {:error, {:unknown_backend, backend_id}}
+    end
+  end
+
+  @doc """
+  Tells the backend the array's object layout (Zarr version and chunk key
+  encoding). A no-op for backends without `put_layout/2`.
+  """
+  @spec put_layout(t(), Backend.layout()) :: t()
+  def put_layout(%__MODULE__{backend: backend_id, state: backend_state} = storage, layout) do
+    with {:ok, backend_module} <- ExZarr.Storage.Registry.get(backend_id),
+         true <- function_exported?(backend_module, :put_layout, 2) do
+      %{storage | state: backend_module.put_layout(backend_state, layout)}
+    else
+      _ -> storage
+    end
+  end
+
+  @doc """
+  Returns whether the storage backend supports a capability.
+  """
+  @spec supports?(t(), atom()) :: boolean()
+  def supports?(%__MODULE__{backend: backend_id, state: backend_state}, capability) do
+    case ExZarr.Storage.Registry.get(backend_id) do
+      {:ok, backend_module} ->
+        Backend.supports?(backend_module, backend_state, capability)
+
+      {:error, :not_found} ->
+        false
     end
   end
 

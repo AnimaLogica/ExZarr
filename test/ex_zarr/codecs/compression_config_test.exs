@@ -57,6 +57,57 @@ defmodule ExZarr.Codecs.CompressionConfigTest do
     end
   end
 
+  describe "include_dirs/0" do
+    test "returns list of include directories" do
+      dirs = CompressionConfig.include_dirs()
+      assert is_list(dirs)
+      assert Enum.all?(dirs, &is_binary/1)
+    end
+
+    test "respects COMPRESSION_INCLUDE_DIRS environment variable" do
+      original = System.get_env("COMPRESSION_INCLUDE_DIRS")
+
+      try do
+        System.put_env("COMPRESSION_INCLUDE_DIRS", "/custom/inc1:/custom/inc2")
+        dirs = CompressionConfig.include_dirs()
+
+        assert dirs == ["/custom/inc1", "/custom/inc2"]
+      after
+        if original do
+          System.put_env("COMPRESSION_INCLUDE_DIRS", original)
+        else
+          System.delete_env("COMPRESSION_INCLUDE_DIRS")
+        end
+      end
+    end
+
+    test "returns platform-specific defaults when env var not set" do
+      original = System.get_env("COMPRESSION_INCLUDE_DIRS")
+
+      try do
+        System.delete_env("COMPRESSION_INCLUDE_DIRS")
+        dirs = CompressionConfig.include_dirs()
+
+        case :os.type() do
+          {:unix, :darwin} ->
+            assert Enum.empty?(dirs) == false
+            assert Enum.any?(dirs, &String.contains?(&1, "include"))
+            assert Enum.any?(dirs, &String.contains?(&1, "zstd"))
+
+          {:unix, _} ->
+            assert Enum.any?(dirs, &String.contains?(&1, "/usr"))
+
+          _ ->
+            assert is_list(dirs)
+        end
+      after
+        if original do
+          System.put_env("COMPRESSION_INCLUDE_DIRS", original)
+        end
+      end
+    end
+  end
+
   describe "rpath_dirs/0" do
     test "returns list of rpath directories" do
       dirs = CompressionConfig.rpath_dirs()

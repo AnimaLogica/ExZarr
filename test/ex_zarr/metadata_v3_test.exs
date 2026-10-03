@@ -86,11 +86,11 @@ defmodule ExZarr.MetadataV3Test do
       assert {:error, {:invalid_shape, _}} = MetadataV3.validate(metadata)
     end
 
-    test "rejects array with empty shape" do
+    test "rejects array with negative shape dimension" do
       metadata = %MetadataV3{
         zarr_format: 3,
         node_type: :array,
-        shape: {},
+        shape: {-1},
         data_type: "float64",
         chunk_grid: %{name: "regular"},
         chunk_key_encoding: %{name: "default"},
@@ -98,6 +98,95 @@ defmodule ExZarr.MetadataV3Test do
       }
 
       assert {:error, {:invalid_shape, _}} = MetadataV3.validate(metadata)
+    end
+
+    test "accepts scalar empty shape" do
+      metadata = %MetadataV3{
+        zarr_format: 3,
+        node_type: :array,
+        shape: {},
+        data_type: "float64",
+        chunk_grid: %{name: "regular", configuration: %{chunk_shape: {}}},
+        chunk_key_encoding: %{name: "default"},
+        codecs: [%{name: "bytes"}],
+        fill_value: 0.0,
+        attributes: %{}
+      }
+
+      assert :ok = MetadataV3.validate(metadata)
+    end
+
+    test "accepts zero-length dimensions" do
+      metadata = %MetadataV3{
+        zarr_format: 3,
+        node_type: :array,
+        shape: {0, 10},
+        data_type: "float64",
+        chunk_grid: %{name: "regular", configuration: %{chunk_shape: {1, 10}}},
+        chunk_key_encoding: %{name: "default"},
+        codecs: [%{name: "bytes"}],
+        fill_value: 0.0,
+        attributes: %{}
+      }
+
+      assert :ok = MetadataV3.validate(metadata)
+    end
+
+    test "round-trips storage_transformers metadata" do
+      metadata = %MetadataV3{
+        zarr_format: 3,
+        node_type: :array,
+        shape: {4},
+        data_type: "int32",
+        chunk_grid: %{name: "regular", configuration: %{chunk_shape: {4}}},
+        chunk_key_encoding: %{name: "default"},
+        codecs: [%{name: "bytes"}],
+        fill_value: 0,
+        attributes: %{},
+        storage_transformers: []
+      }
+
+      assert :ok = MetadataV3.validate(metadata)
+      json = Jason.encode!(metadata)
+      assert {:ok, decoded} = MetadataV3.from_json(json)
+      assert decoded.storage_transformers == []
+    end
+
+    test "rejects required unknown storage transformers" do
+      metadata = %MetadataV3{
+        zarr_format: 3,
+        node_type: :array,
+        shape: {4},
+        data_type: "int32",
+        chunk_grid: %{name: "regular", configuration: %{chunk_shape: {4}}},
+        chunk_key_encoding: %{name: "default"},
+        codecs: [%{name: "bytes"}],
+        fill_value: 0,
+        attributes: %{},
+        storage_transformers: [%{"name" => "unknown_transformer"}]
+      }
+
+      assert {:error, {:unsupported_extension, %{point: :storage_transformers}}} =
+               MetadataV3.validate(metadata)
+    end
+
+    test "ignores optional unknown storage transformers" do
+      metadata = %MetadataV3{
+        zarr_format: 3,
+        node_type: :array,
+        shape: {4},
+        data_type: "int32",
+        chunk_grid: %{name: "regular", configuration: %{chunk_shape: {4}}},
+        chunk_key_encoding: %{name: "default"},
+        codecs: [%{name: "bytes"}],
+        fill_value: 0,
+        attributes: %{},
+        storage_transformers: [
+          %{"name" => "unknown_transformer", "must_understand" => false}
+        ]
+      }
+
+      assert :ok = MetadataV3.validate(metadata)
     end
 
     test "rejects array with invalid data_type" do

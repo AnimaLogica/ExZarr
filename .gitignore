@@ -27,3 +27,10 @@ erl_crash.dump
 /humidity/
 /child/child/
 /data/
+/baoulo/
+.DS_Store
+SESSION_STATE.md
+
+# Zigler intermediate (regenerated on source builds)
+lib/ex_zarr/codecs/.Elixir.*.zig
+artifacts/

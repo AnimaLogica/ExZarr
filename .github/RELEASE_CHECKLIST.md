@@ -15,7 +15,7 @@ Use this checklist when preparing and publishing the release.
 - [x] README.md updated with correct version
 - [x] CHANGELOG.md contains v0.1.0 entry
 - [x] RELEASE_NOTES.md created
-- [x] INTEROPERABILITY.md reviewed and current
+- [x] docs/INTEROPERABILITY.md reviewed and current
 - [x] All code examples tested and working
 - [x] API documentation complete with examples
 

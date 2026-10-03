@@ -1,14 +1,14 @@
 defmodule ExZarr.MixProject do
   use Mix.Project
 
-  @version "1.1.0"
+  @version "1.2.0"
   @source_url "https://github.com/thanos/ExZarr"
 
   def project do
     [
       app: :ex_zarr,
       version: @version,
-      elixir: "~> 1.14",
+      elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: Mix.compilers(),
@@ -36,7 +36,8 @@ defmodule ExZarr.MixProject do
 
   defp aliases do
     [
-      compile: ["compile", "fix_nif_rpaths"]
+      compile: ["compile", "fix_nif_rpaths"],
+      verify: &verify/1
     ]
   end
 
@@ -65,7 +66,10 @@ defmodule ExZarr.MixProject do
       # JSON encoding/decoding for metadata
       {:jason, "~> 1.4"},
 
-      # Zig NIFs for compression codecs
+      # Zig NIFs: zigler required until precompiled checksums ship (Mix.install /
+      # path deps do not pull optional deps). After checksum-*.exs is published,
+      # zigler can become optional: true again for Hex-only consumers.
+      {:zigler_precompiled, "~> 0.1.6"},
       {:zigler, "~> 0.16", runtime: false},
 
       # Cloud storage backends (optional)
@@ -73,9 +77,9 @@ defmodule ExZarr.MixProject do
       {:ex_aws_s3, "~> 2.5", optional: true},
       {:sweet_xml, "~> 0.7", optional: true},
       {:goth, "~> 1.4", optional: true},
-      {:google_api_storage, "~> 0.36", optional: true},
-      {:azurex, "~> 1.1"},
-      {:req, "~> 0.4", optional: true},
+      {:azure_sdk, "~> 0.4.1", optional: true},
+      # override: azure_sdk 0.4.1 still declares req ~> 0.5; CVE-2026-49755 needs >= 0.6.1
+      {:req, "~> 0.6.1", optional: true, override: true},
 
       # Database storage backends (optional)
       {:mongodb_driver, "~> 1.4", optional: true},
@@ -91,10 +95,11 @@ defmodule ExZarr.MixProject do
       {:gen_stage, "~> 1.2", optional: true},
       {:broadway, "~> 1.0", optional: true},
 
-      # Documentation
-      # compile-only; zig_doc (via zigler) requires ex_doc when building NIFs
-      {:ex_doc, "~> 0.39", only: [:dev, :test, :prod], runtime: false, override: true},
+      # Documentation — no :only: zig_doc (zigler transitive dep) requires ex_doc in prod
+      {:ex_doc, "~> 0.39", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_slop, "~> 0.4.5", only: [:dev, :test], runtime: false},
+      {:doctor, "~> 0.23.0", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
@@ -122,16 +127,18 @@ defmodule ExZarr.MixProject do
         "Zarr Specification" => "https://zarr.dev"
       },
       maintainers: ["Thanos Vassilakis"],
+      # Zigler regenerates this ignored intermediate during source builds.
+      exclude_patterns: ["lib/ex_zarr/codecs/.Elixir.ExZarr.Codecs.ZigCodecs.zig"],
       files: [
         "lib",
-        # Only include NIFs, not PLTs
-        "priv/lib",
         "native",
+        "checksum-*.exs",
+        "docs/PRECOMPILATION.md",
         ".formatter.exs",
         "mix.exs",
         "README.md",
         "CHANGELOG.md",
-        "INTEROPERABILITY.md",
+        "docs/INTEROPERABILITY.md",
         "LICENSE"
       ]
     ]
@@ -139,116 +146,158 @@ defmodule ExZarr.MixProject do
 
   defp docs do
     [
-      main: "ExZarr",
+      main: "what_is_zarr",
       extras: [
         # Getting Started
-        "README.md",
-        "ZARR_V3_STATUS.md",
-        "guides/quickstart.md",
+        "docs/guides/what_is_zarr.md",
+        {"README.md", title: "Introduction"},
 
         # Core Concepts
-        "guides/core_concepts.md",
-        "guides/parallel_io.md",
+        "docs/guides/core_concepts.md",
+        "docs/guides/parallel_io.md",
 
         # Storage and Backends
-        "guides/storage_providers.md",
-        "guides/custom_storage_backend.md",
+        "docs/guides/storage_providers.md",
+        "docs/guides/custom_storage_backend.md",
 
         # Compression and Data Processing
-        "guides/compression_codecs.md",
-        "guides/python_interop.md",
+        "docs/guides/compression_codecs.md",
+        "docs/guides/python_interop.md",
 
         # Advanced Topics
-        "guides/performance.md",
-        "guides/nx_integration.md",
+        "docs/guides/performance.md",
+        "docs/guides/nx_integration.md",
+        "docs/guides/telemetry.md",
+        "docs/educational/v1_1_streaming_guide.md",
 
-        # Reference
-        "guides/troubleshooting.md",
-        "guides/glossary.md",
+        # Examples
+        "docs/livebooks/README.md",
+        "docs/livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+        "docs/livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+        "docs/livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
+        "docs/livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
+        "docs/livebooks/05_finance/05_01_tick_data_cube.livemd",
+        "docs/livebooks/broadway_pipeline.livemd",
+        "docs/livebooks/nx_streaming.livemd",
+        "docs/livebooks/zarr_fundamentals.livemd",
+        "docs/livebooks/earthmover_datacube.livemd",
+        "docs/livebooks/xarray_zarr_intro.livemd",
+        "docs/livebooks/benchmarking_zarr.livemd",
+        "examples/README.md",
 
-        # Contributing
-        "guides/contributing.md",
-        "guides/telemetry.md",
-        "migration_guide_v1_1_0.md",
-        "release_notes_v1_1_0.md",
-        "ROADMAP.md",
+        # Cookbooks
+        "docs/livebooks/06_cookbook/06_01_100gb_arrays.livemd",
+        "docs/livebooks/06_cookbook/06_02_1tb_arrays.livemd",
+        "docs/livebooks/06_cookbook/06_03_image_archives.livemd",
+        "docs/livebooks/06_cookbook/06_04_ml_pipelines.livemd",
+        "docs/livebooks/06_cookbook/06_05_geospatial.livemd",
+        "docs/livebooks/06_cookbook/06_06_scientific_computing.livemd",
+        "docs/livebooks/06_cookbook/06_07_distributed.livemd",
+
+        # Architecture
         "docs/architecture_review.md",
         "docs/gap_analysis.md",
         "docs/v1_1_design.md",
         "docs/cloud_storage_patterns.md",
-        "docs/cookbook/README.md",
-        "docs/cookbook/100gb_arrays.md",
-        "docs/cookbook/1tb_arrays.md",
-        "docs/cookbook/image_archives.md",
-        "docs/cookbook/ml_pipelines.md",
-        "docs/cookbook/geospatial.md",
-        "docs/cookbook/scientific_computing.md",
-        "docs/cookbook/distributed.md",
-        "docs/educational/v1_1_streaming_guide.md",
 
         # Additional Documentation
         "CHANGELOG.md",
-        "INTEROPERABILITY.md",
-        "LICENSE",
-        "PERFORMANCE_IMPROVEMENTS.md",
-        "SECURITY.md",
+        "docs/release_notes_v1_1_0.md",
+        "docs/release_notes_v1_2_0.md",
+        "docs/ROADMAP.md",
+        "docs/ZARR_V3_STATUS.md",
+        "docs/INTEROPERABILITY.md",
+        "docs/SECURITY.md",
+        "docs/PERFORMANCE_IMPROVEMENTS.md",
         "docs/V2_TO_V3_MIGRATION.md",
-        "benchmarks/README.md"
+        "docs/migration_guide_v1_1_0.md",
+        "benchmarks/README.md",
+        "docs/PRECOMPILATION.md",
+        "LICENSE",
+
+        # Reference
+        "docs/guides/troubleshooting.md",
+        "docs/guides/glossary.md",
+
+        # Contributing
+        "docs/guides/contributing.md"
       ],
       groups_for_extras: [
         "Getting Started": [
-          "README.md",
-          "guides/quickstart.md"
+          "docs/guides/what_is_zarr.md",
+          "README.md"
         ],
         "Core Concepts": [
-          "guides/core_concepts.md",
-          "guides/parallel_io.md"
+          "docs/guides/core_concepts.md",
+          "docs/guides/parallel_io.md"
         ],
         "Storage and Backends": [
-          "guides/storage_providers.md",
-          "guides/custom_storage_backend.md"
+          "docs/guides/storage_providers.md",
+          "docs/guides/custom_storage_backend.md"
         ],
         "Compression and Data Processing": [
-          "guides/compression_codecs.md",
-          "guides/python_interop.md"
+          "docs/guides/compression_codecs.md",
+          "docs/guides/python_interop.md"
         ],
         "Advanced Topics": [
-          "guides/performance.md",
-          "guides/nx_integration.md"
+          "docs/guides/performance.md",
+          "docs/guides/nx_integration.md",
+          "docs/guides/telemetry.md",
+          "docs/educational/v1_1_streaming_guide.md"
         ],
-        Reference: [
-          "guides/troubleshooting.md",
-          "guides/glossary.md"
+        Examples: [
+          "docs/livebooks/README.md",
+          "docs/livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+          "docs/livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+          "docs/livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
+          "docs/livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
+          "docs/livebooks/05_finance/05_01_tick_data_cube.livemd",
+          "docs/livebooks/broadway_pipeline.livemd",
+          "docs/livebooks/nx_streaming.livemd",
+          "docs/livebooks/zarr_fundamentals.livemd",
+          "docs/livebooks/earthmover_datacube.livemd",
+          "docs/livebooks/xarray_zarr_intro.livemd",
+          "docs/livebooks/benchmarking_zarr.livemd",
+          "examples/README.md"
         ],
-        Contributing: [
-          "guides/contributing.md"
+        Cookbooks: [
+          "docs/livebooks/06_cookbook/06_01_100gb_arrays.livemd",
+          "docs/livebooks/06_cookbook/06_02_1tb_arrays.livemd",
+          "docs/livebooks/06_cookbook/06_03_image_archives.livemd",
+          "docs/livebooks/06_cookbook/06_04_ml_pipelines.livemd",
+          "docs/livebooks/06_cookbook/06_05_geospatial.livemd",
+          "docs/livebooks/06_cookbook/06_06_scientific_computing.livemd",
+          "docs/livebooks/06_cookbook/06_07_distributed.livemd"
         ],
-        "v1.1 Streaming": [
-          "migration_guide_v1_1_0.md",
-          "release_notes_v1_1_0.md",
+        Architecture: [
+          "docs/architecture_review.md",
+          "docs/gap_analysis.md",
           "docs/v1_1_design.md",
-          "docs/cloud_storage_patterns.md",
-          "docs/educational/v1_1_streaming_guide.md",
-          "guides/telemetry.md"
-        ],
-        Cookbook: [
-          "docs/cookbook/README.md",
-          "docs/cookbook/100gb_arrays.md",
-          "docs/cookbook/1tb_arrays.md",
-          "docs/cookbook/image_archives.md",
-          "docs/cookbook/ml_pipelines.md",
-          "docs/cookbook/geospatial.md",
-          "docs/cookbook/scientific_computing.md",
-          "docs/cookbook/distributed.md"
+          "docs/cloud_storage_patterns.md"
         ],
         "Additional Documentation": [
           "CHANGELOG.md",
-          "INTEROPERABILITY.md",
-          "LICENSE",
-          "PERFORMANCE_IMPROVEMENTS.md",
-          "SECURITY.md",
+          "docs/ROADMAP.md",
+          "docs/ZARR_V3_STATUS.md",
+          "docs/INTEROPERABILITY.md",
+          "docs/SECURITY.md",
+          "docs/PERFORMANCE_IMPROVEMENTS.md",
           "docs/V2_TO_V3_MIGRATION.md",
-          "benchmarks/README.md"
+          "benchmarks/README.md",
+          "docs/PRECOMPILATION.md",
+          "LICENSE"
+        ],
+        "Release Notes & Migration Guides": [
+          "docs/release_notes_v1_1_0.md",
+          "docs/release_notes_v1_2_0.md",
+          "docs/migration_guide_v1_1_0.md"
+        ],
+        Reference: [
+          "docs/guides/troubleshooting.md",
+          "docs/guides/glossary.md"
+        ],
+        Contributing: [
+          "docs/guides/contributing.md"
         ]
       ],
       source_ref: "v#{@version}",
@@ -272,7 +321,7 @@ defmodule ExZarr.MixProject do
           setTimeout(function() {
             document.addEventListener('keydown', function handler(e2) {
               if (e2.key === 'h') {
-                window.location.href = 'readme.html';
+                window.location.href = 'what_is_zarr.html';
               }
               document.removeEventListener('keydown', handler);
             }, {once: true});
@@ -284,4 +333,33 @@ defmodule ExZarr.MixProject do
   end
 
   defp before_closing_body_tag(_), do: ""
+
+  defp verify(_) do
+    steps = [
+      {"compile --warnings-as-errors", :dev},
+      {"format --check-formatted", :dev},
+      {"credo --strict", :dev},
+      {"doctor --full --raise", :dev},
+      {"sobelow --config", :dev},
+      {"dialyzer", :dev},
+      {"test --cover", :test},
+      {"docs --warnings-as-errors", :dev}
+    ]
+
+    Enum.each(steps, fn {task, env} ->
+      Mix.shell().info([:bright, "==> mix #{task}", :reset])
+
+      {_, exit_code} =
+        System.cmd("mix", String.split(task),
+          env: [{"MIX_ENV", to_string(env)}],
+          into: IO.stream()
+        )
+
+      if exit_code != 0 do
+        Mix.raise("mix #{task} failed (exit code #{exit_code})")
+      end
+    end)
+
+    Mix.shell().info([:green, :bright, "\nAll verification checks passed!", :reset])
+  end
 end

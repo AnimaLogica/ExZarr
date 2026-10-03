@@ -1,4 +1,6 @@
 defmodule ExZarr.ChunkCache do
+  # LRU cache with hit/miss stats — GenServer is intentional, not a plain KV store.
+  # credo:disable-for-this-file ExSlop.Check.Warning.GenserverAsKvStore
   @moduledoc """
   LRU (Least Recently Used) cache for array chunks.
 

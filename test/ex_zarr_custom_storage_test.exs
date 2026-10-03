@@ -309,7 +309,7 @@ defmodule ExZarr.CustomStorageTest do
       data = for i <- 0..99, into: <<>>, do: <<i::signed-little-32>>
       :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {100})
 
-      # Now we should have chunks
+      # 100 elements / 25 per chunk => 4 chunk keys should exist
       {:ok, chunks} = ExZarr.Storage.list_chunks(array.storage)
       # 100/25 = 4 chunks
       assert length(chunks) == 4
