@@ -1,4 +1,4 @@
-# Migrating from Zarr v2 to v3 in ExZarr
+# Migrating from Zarr v2 to v3
 
 This guide helps you migrate existing Zarr v2 code to use the v3 specification in ExZarr.
 

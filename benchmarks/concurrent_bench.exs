@@ -228,22 +228,22 @@ Benchee.run(
   %{
     "stream_sequential" => fn ->
       stream_array
-      |> Array.chunk_stream(parallel: 1)
+      |> Array.chunk_stream(concurrency: 1)
       |> Enum.to_list()
     end,
     "stream_parallel_2" => fn ->
       stream_array
-      |> Array.chunk_stream(parallel: 2)
+      |> Array.chunk_stream(concurrency: 2)
       |> Enum.to_list()
     end,
     "stream_parallel_4" => fn ->
       stream_array
-      |> Array.chunk_stream(parallel: 4)
+      |> Array.chunk_stream(concurrency: 4)
       |> Enum.to_list()
     end,
     "stream_parallel_8" => fn ->
       stream_array
-      |> Array.chunk_stream(parallel: 8)
+      |> Array.chunk_stream(concurrency: 8)
       |> Enum.to_list()
     end
   },

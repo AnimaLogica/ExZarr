@@ -264,9 +264,153 @@ defmodule ExZarr.ZipStorageTest do
 
           assert read_data == data
         after
-          File.rm(path)
+          File.rm_rf(path)
         end
       end)
+    end
+
+    test "save without path flushes zip cache to configured archive" do
+      path = "/tmp/test_zip_flush_#{:rand.uniform(1_000_000)}.zip"
+
+      try do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {20},
+            chunks: {10},
+            dtype: :int32,
+            compressor: :zlib,
+            storage: :zip,
+            path: path
+          )
+
+        data = for i <- 0..19, into: <<>>, do: <<i::signed-little-32>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {20})
+
+        # No :path — zip backend writes metadata (and archive) in place
+        assert :ok = ExZarr.save(array, [])
+        assert File.regular?(path)
+
+        {:ok, reopened} = ExZarr.open(path: path, storage: :zip)
+        {:ok, read_data} = ExZarr.Array.get_slice(reopened, start: {0}, stop: {20})
+        assert read_data == data
+      after
+        File.rm_rf(path)
+      end
+    end
+
+    test "save memory array to .zip path creates zip archive" do
+      path = "/tmp/test_memory_to_zip_#{:rand.uniform(1_000_000)}.zip"
+
+      try do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {16},
+            chunks: {8},
+            dtype: :uint16,
+            compressor: :zlib,
+            storage: :memory
+          )
+
+        data = for i <- 0..15, into: <<>>, do: <<i::unsigned-little-16>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {16})
+
+        assert :ok = ExZarr.save(array, path: path)
+        assert File.regular?(path)
+
+        {:ok, reopened} = ExZarr.open(path: path, storage: :zip)
+        {:ok, read_data} = ExZarr.Array.get_slice(reopened, start: {0}, stop: {16})
+        assert read_data == data
+      after
+        File.rm_rf(path)
+      end
+    end
+
+    test "save zip array to a different .zip path copies archive" do
+      src = "/tmp/test_zip_src_#{:rand.uniform(1_000_000)}.zip"
+      dest = "/tmp/test_zip_dest_#{:rand.uniform(1_000_000)}.zip"
+
+      try do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {12},
+            chunks: {6},
+            dtype: :int32,
+            compressor: :zlib,
+            storage: :zip,
+            path: src
+          )
+
+        data = for i <- 0..11, into: <<>>, do: <<i * 3::signed-little-32>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {12})
+
+        assert :ok = ExZarr.save(array, path: dest)
+        assert File.regular?(dest)
+
+        {:ok, reopened} = ExZarr.open(path: dest, storage: :zip)
+        {:ok, read_data} = ExZarr.Array.get_slice(reopened, start: {0}, stop: {12})
+        assert read_data == data
+      after
+        File.rm_rf(src)
+        File.rm_rf(dest)
+      end
+    end
+
+    test "save rejects empty path" do
+      {:ok, array} =
+        ExZarr.create(
+          shape: {4},
+          chunks: {4},
+          dtype: :int32,
+          storage: :memory
+        )
+
+      assert {:error, :invalid_path} = ExZarr.save(array, path: "")
+    end
+
+    test "zip backend rejects missing or invalid paths" do
+      alias ExZarr.Storage.Backend.Zip
+
+      assert {:error, :path_required} = Zip.init([])
+      assert {:error, :path_required} = Zip.init(path: nil)
+      assert {:error, :invalid_path} = Zip.init(path: :not_a_string)
+
+      assert {:error, :path_required} = Zip.open([])
+
+      assert {:error, :not_found} =
+               Zip.open(path: "/tmp/exzarr_missing_#{:rand.uniform(1_000_000)}.zip")
+
+      assert false == Zip.exists?([])
+      assert false == Zip.exists?(path: "/tmp/exzarr_missing_#{:rand.uniform(1_000_000)}.zip")
+    end
+
+    test "zip open ignores unknown archive entries and rejects corrupt files" do
+      alias ExZarr.Storage.Backend.Zip
+
+      path = "/tmp/test_zip_extra_#{:rand.uniform(1_000_000)}.zip"
+      bad_path = "/tmp/test_zip_corrupt_#{:rand.uniform(1_000_000)}.zip"
+
+      try do
+        {:ok, {_name, zip_bin}} =
+          :zip.create(
+            ~c"extra.zip",
+            [
+              {~c".zarray",
+               ~s({"zarr_format":2,"shape":[4],"chunks":[4],"dtype":"<i4","compressor":null,"fill_value":0,"order":"C","filters":null,"dimension_separator":"."})},
+              {~c"0", <<1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0>>},
+              {~c"README.txt", "not a chunk"}
+            ],
+            [:memory]
+          )
+
+        File.write!(path, zip_bin)
+        assert {:ok, _state} = Zip.open(path: path)
+
+        File.write!(bad_path, "this is not a zip file")
+        assert {:error, {:zip_error, _}} = Zip.open(path: bad_path)
+      after
+        File.rm_rf(path)
+        File.rm_rf(bad_path)
+      end
     end
   end
 end

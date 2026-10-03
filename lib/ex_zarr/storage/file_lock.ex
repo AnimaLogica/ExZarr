@@ -44,7 +44,7 @@ defmodule ExZarr.Storage.FileLock do
 
   @type lock :: %{
           path: String.t(),
-          lock_file: String.t(),
+          lock_file: String.t() | nil,
           fd: :file.fd() | nil,
           type: :read | :write
         }
@@ -82,57 +82,38 @@ defmodule ExZarr.Storage.FileLock do
   @doc """
   Acquires a read lock on a file.
 
-  For read locks, we use a less restrictive approach since multiple readers
-  are allowed. This is advisory only.
+  Multiple readers are allowed. A reader waits while a write lock exists for
+  the file, so it never observes a partially written chunk. Read locks create
+  no files, so stores are not littered with lock artifacts.
 
   ## Options
 
-  - `:timeout` - Maximum time to wait for lock in milliseconds (default: 5000)
+  - `:timeout` - Maximum time to wait for a write lock to clear in
+    milliseconds (default: 5000)
 
   ## Returns
 
-  - `{:ok, lock}` if lock acquired
-  - `{:error, reason}` for errors
+  - `{:ok, lock}` once no write lock is held
+  - `{:error, :timeout}` if a write lock is still held after `:timeout`
   """
   @spec acquire_read(String.t(), keyword()) :: {:ok, lock()} | {:error, lock_error()}
-  def acquire_read(path, _opts \\ []) do
-    lock_file = path <> @lock_suffix <> ".read"
+  def acquire_read(path, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    deadline = System.monotonic_time(:millisecond) + timeout
+    wait_for_writer(path, deadline)
+  end
 
-    # Ensure the parent directory exists for the lock file
-    lock_dir = Path.dirname(lock_file)
-    _ = File.mkdir_p(lock_dir)
+  defp wait_for_writer(path, deadline) do
+    cond do
+      not File.exists?(path <> @lock_suffix) ->
+        {:ok, %{path: path, lock_file: nil, fd: nil, type: :read}}
 
-    # For read locks, we just open the file without exclusive mode
-    case :file.open(lock_file, [:read, :write, :binary]) do
-      {:ok, fd} ->
-        lock = %{
-          path: path,
-          lock_file: lock_file,
-          fd: fd,
-          type: :read
-        }
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, :timeout}
 
-        {:ok, lock}
-
-      {:error, :enoent} ->
-        # File doesn't exist, create it
-        case :file.open(lock_file, [:read, :write, :binary, :raw]) do
-          {:ok, fd} ->
-            lock = %{
-              path: path,
-              lock_file: lock_file,
-              fd: fd,
-              type: :read
-            }
-
-            {:ok, lock}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+      true ->
+        Process.sleep(10)
+        wait_for_writer(path, deadline)
     end
   end
 

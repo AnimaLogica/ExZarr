@@ -376,16 +376,8 @@ defmodule ExZarr.V3PythonInteropTest do
         py_dtype = result["metadata"]["dtype"]
         dtype_str = Atom.to_string(dtype)
 
-        expected_base =
-          case dtype_str do
-            "uint" <> bits -> "uint" <> bits
-            "int" <> bits -> "int" <> bits
-            "float" <> bits -> "float" <> bits
-            other -> other
-          end
-
-        assert String.contains?(py_dtype, expected_base),
-               "Dtype mismatch: Python sees #{py_dtype}, expected #{expected_base}"
+        assert String.contains?(py_dtype, dtype_str),
+               "Dtype mismatch: Python sees #{py_dtype}, expected #{dtype_str}"
       end
     end
 
@@ -610,7 +602,107 @@ defmodule ExZarr.V3PythonInteropTest do
     end
   end
 
+  describe "sharding_indexed interop (ExZarr to zarr-python)" do
+    test "shard_shape option writes spec layout readable by Python", %{
+      python_v3_available: available
+    } do
+      assert available, "zarr-python 3.x not available"
+      path = Path.join(@test_dir, "exzarr_sharded_option")
+
+      # 2x3 inner chunks of 4x4 elements per shard => shard shape 8x12
+      {:ok, array} =
+        ExZarr.create(
+          shape: {10, 14},
+          chunks: {4, 4},
+          shard_shape: {2, 3},
+          dtype: :int32,
+          zarr_version: 3,
+          storage: :filesystem,
+          path: path
+        )
+
+      assert array.chunks == {4, 4}
+      data = for i <- 0..(10 * 14 - 1), into: <<>>, do: <<i::signed-little-32>>
+      :ok = ExZarr.Array.set_slice(array, data, start: {0, 0}, stop: {10, 14})
+
+      assert {:ok, result} = python_array_digest(path)
+      assert result["success"], inspect(result)
+      assert result["chunks"] == [4, 4]
+      assert result["shards"] == [8, 12]
+      assert result["sha256"] == sha256(data)
+    end
+
+    test "explicit codec config with index at start is readable by Python", %{
+      python_v3_available: available
+    } do
+      assert available, "zarr-python 3.x not available"
+      path = Path.join(@test_dir, "exzarr_sharded_start")
+
+      {:ok, array} =
+        ExZarr.create(
+          shape: {6, 10},
+          chunks: {4, 4},
+          dtype: :float64,
+          zarr_version: 3,
+          storage: :filesystem,
+          path: path,
+          codecs: [
+            %{
+              name: "sharding_indexed",
+              configuration: %{
+                chunk_shape: [2, 2],
+                codecs: [%{name: "bytes"}, %{name: "gzip", configuration: %{level: 1}}],
+                index_codecs: [%{name: "bytes"}, %{name: "crc32c"}],
+                index_location: "start"
+              }
+            }
+          ]
+        )
+
+      assert array.chunks == {2, 2}
+      data = for i <- 0..59, into: <<>>, do: <<i * 1.5::float-little-64>>
+      :ok = ExZarr.Array.set_slice(array, data, start: {0, 0}, stop: {6, 10})
+
+      {:ok, reopened} = ExZarr.open(path: path)
+      assert {:ok, ^data} = ExZarr.Array.get_slice(reopened, start: {0, 0}, stop: {6, 10})
+
+      assert {:ok, result} = python_array_digest(path)
+      assert result["success"], inspect(result)
+      assert result["shards"] == [4, 4]
+      assert result["sha256"] == sha256(data)
+    end
+
+    test "zarr-python sharded array reads byte-identical in ExZarr", %{
+      python_v3_available: available
+    } do
+      assert available, "zarr-python 3.x not available"
+      path = Path.join(@test_dir, "py_sharded")
+
+      script = """
+      import sys, numpy as np, zarr
+      a = zarr.create_array(sys.argv[1], shape=(7, 9), chunks=(2, 3), shards=(4, 6), dtype="uint16", zarr_format=3)
+      a[:] = np.arange(63, dtype="uint16").reshape(7, 9)
+      """
+
+      assert {_, 0} = System.cmd("python3", ["-c", script, path], stderr_to_stdout: true)
+
+      {:ok, array} = ExZarr.open(path: path)
+      assert array.chunks == {2, 3}
+      {:ok, data} = ExZarr.Array.get_slice(array, start: {0, 0}, stop: {7, 9})
+      assert data == for(i <- 0..62, into: <<>>, do: <<i::unsigned-little-16>>)
+    end
+  end
+
   ## Helper Functions
+
+  defp sha256(data), do: :crypto.hash(:sha256, data) |> Base.encode16(case: :lower)
+
+  defp python_array_digest(path) do
+    case System.cmd("python3", [@python_helper, "array_digest", path]) do
+      {output, 0} -> {:ok, Jason.decode!(output)}
+      {output, _} -> {:error, output}
+    end
+  end
 
   defp check_python_v3_dependencies do
     case System.cmd("python3", ["--version"]) do

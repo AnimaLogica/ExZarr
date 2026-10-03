@@ -1,4 +1,4 @@
-# ExZarr content plan (Medium + Livebook gallery)
+# Content plan (Medium + Livebook gallery)
 
 This file is meant to live in the ExZarr repo as an editorial / tutorial roadmap.
 It’s biased toward *domain-rich*, runnable demos and toward Elixir/OTP strengths

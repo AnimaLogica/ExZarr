@@ -1,0 +1,43 @@
+# Geospatial Zarr Datasets
+
+```elixir
+Mix.install([
+  {:ex_zarr, "~> 1.2"}
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
+])
+```
+
+## Pattern
+
+Climate and EO datasets often use `(time, lat, lon)`. Stream along time with
+`stream_slices/3`, or extract windows with `get_slice/2`.
+
+```elixir
+alias ExZarr.Array
+alias ExZarr.Gallery.Pack
+
+# Compact stand-in for (time, lat, lon)
+{:ok, array} =
+  Array.create(
+    shape: {12, 18, 36},
+    chunks: {1, 18, 36},
+    dtype: :float32,
+    compressor: :zlib,
+    storage: :memory
+  )
+
+n = 12 * 18 * 36
+vals = for i <- 0..(n - 1), do: i * 0.001
+:ok = Array.set_slice(array, Pack.pack(vals, :float32), start: {0, 0, 0}, stop: {12, 18, 36})
+
+timesteps =
+  array
+  |> Array.stream_slices(0, concurrency: 2)
+  |> Enum.map(fn {start, data} ->
+    {elem(start, 0), byte_size(data)}
+  end)
+
+%{timesteps: Enum.take(timesteps, 3), total_steps: length(timesteps)}
+```
+
+For spatial windows, use explicit `start`/`stop` (or named dimensions on v3 arrays).

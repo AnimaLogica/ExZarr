@@ -1,24 +1,7 @@
-# Scientific Computing Patterns
+# scientific_computing
 
-## Map-Reduce over Chunks
+This cookbook moved to a Livebook:
 
-```elixir
-partial_sums =
-  array
-  |> ExZarr.Array.stream_chunks(concurrency: System.schedulers_online())
-  |> Enum.map(fn {_idx, data} -> sum_chunk(data) end)
+[`livebooks/06_cookbook/06_06_scientific_computing.livemd`](../livebooks/06_cookbook/06_06_scientific_computing.livemd)
 
-total = Enum.sum(partial_sums)
-```
-
-## GenStage Backpressure
-
-When downstream processing is slower than I/O:
-
-```elixir
-{:ok, producer} = ExZarr.GenStage.start_chunk_producer(array)
-{:ok, consumer} = SlowConsumer.start_link(producer: producer)
-GenStage.ask(producer, 10)
-```
-
-The producer reads only what the consumer requests.
+Open it in Livebook or via the **Cookbooks** section of `mix docs`.

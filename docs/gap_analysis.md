@@ -1,18 +1,21 @@
-# ExZarr Gap Analysis: v1.1.0
+# Gap Analysis
+
+As of v1.2.0
 
 ## Comparison Matrix
 
-| Capability | Python Zarr | TensorStore | TileDB | ExZarr v1.0 | ExZarr v1.1 |
+| Capability | Python Zarr | TensorStore | TileDB | ExZarr v1.1 | ExZarr v1.2 |
 |------------|-------------|-------------|--------|-------------|-------------|
-| Lazy chunk iteration | Yes | Yes | Yes | Partial (`chunk_stream`) | Yes (`stream_chunks`) |
-| Parallel reads | Thread pool | Async I/O | Thread pool | Task.async_stream | Task + Flow + GenStage |
-| Write streaming | Yes | Yes | Yes | No | Yes (`write_stream`) |
-| Backpressure | Limited | Yes | Yes | No | GenStage + Flow |
-| Fault-tolerant pipelines | External (Dask) | Limited | Yes | No | Broadway integration |
-| Cloud storage | fsspec | Native GCS/S3 | S3 | S3/GCS/Azure | Hardened patterns doc |
-| Nx/torch integration | Via Dask/Xarray | TF/JAX | Limited | ExZarr.Nx | Streaming tensors |
-| Distributed processing | Dask | Limited | Yes | No | Stretch goal |
-| Telemetry | Limited | Yes | Yes | Documented only | Implemented |
+| Lazy chunk iteration | Yes | Yes | Yes | Yes (`stream_chunks`) | Yes |
+| Parallel reads | Thread pool | Async I/O | Thread pool | Task + Flow + GenStage | Same + range-aware shard reads |
+| Write streaming | Yes | Yes | Yes | Yes (`write_stream`) | Yes |
+| Backpressure | Limited | Yes | Yes | GenStage + Flow | Same |
+| Fault-tolerant pipelines | External (Dask) | Limited | Yes | Broadway | Same |
+| Cloud storage | fsspec | Native GCS/S3 | S3 | S3/GCS/Azure | AzureSDK; version-aware keys; optional byte ranges |
+| Spec sharding | Yes | Yes | Yes | Private / partial | Spec `sharding_indexed` v1.0 + zarr-python CI |
+| Nx/torch integration | Via Dask/Xarray | TF/JAX | Limited | Streaming tensors | Same (Explorer planned v1.3) |
+| Distributed processing | Dask | Limited | Yes | Stretch goal | Deferred to v2.0 |
+| Telemetry | Limited | Yes | Yes | Implemented | + shard `range_read` events |
 
 ## BEAM Unique Advantages
 
@@ -31,12 +34,13 @@
 5. **Hot code upgrades:** Long-running streaming pipelines can be upgraded in
    place on production nodes.
 
-## Remaining Gaps (Post v1.1.0)
+## Remaining Gaps (Post v1.2.0)
 
-- Multi-node distributed chunk processing (Horde/Swarm)
-- Explorer direct streaming integration
-- Async codec pipeline (overlap I/O and decode)
-- Zarr v3 async store interface alignment
+- Storage-transformer runtime execution
+- Adaptive multi-range coalescing / partial writes inside cloud shards
+- Explorer direct streaming integration (planned v1.3)
+- Async codec pipeline (overlap I/O and decode) (planned v1.4)
+- Multi-node distributed chunk processing (planned v2.0)
 
 ## Opportunities
 

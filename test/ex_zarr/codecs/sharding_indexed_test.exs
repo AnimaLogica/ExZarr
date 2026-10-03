@@ -59,12 +59,15 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "encode/2 and decode/2" do
     setup do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2],
-          "codecs" => [%{"name" => "bytes", "configuration" => %{}}],
-          "index_codecs" => [%{"name" => "bytes", "configuration" => %{}}],
-          "index_location" => "end"
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2],
+            "codecs" => [%{"name" => "bytes", "configuration" => %{}}],
+            "index_codecs" => [%{"name" => "bytes", "configuration" => %{}}],
+            "index_location" => "end"
+          },
+          shard_shape: [4, 4]
+        )
 
       {:ok, codec: codec}
     end
@@ -122,12 +125,15 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "decode_chunk/3" do
     setup do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}],
-          "index_location" => "end"
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}],
+            "index_location" => "end"
+          },
+          shard_shape: [4, 4]
+        )
 
       chunks = %{
         {0, 0} => <<1, 2, 3, 4>>,
@@ -153,8 +159,13 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
       end
     end
 
-    test "returns error for non-existent chunk", %{codec: codec, shard: shard} do
-      assert {:error, {:chunk_not_found, {9, 9}}} =
+    test "returns error for missing (sentinel) chunk slot", %{codec: codec} do
+      {:ok, shard} = ShardingIndexed.encode(%{{0, 0} => <<1, 2, 3, 4>>}, codec)
+
+      assert {:error, {:chunk_not_found, {1, 1}}} =
+               ShardingIndexed.decode_chunk(shard, {1, 1}, codec)
+
+      assert {:error, {:invalid_chunk_index, {9, 9}}} =
                ShardingIndexed.decode_chunk(shard, {9, 9}, codec)
     end
   end
@@ -162,12 +173,15 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "index_location :start" do
     setup do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}],
-          "index_location" => "start"
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}],
+            "index_location" => "start"
+          },
+          shard_shape: [4, 4]
+        )
 
       {:ok, codec: codec}
     end
@@ -202,14 +216,17 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "with compression codecs" do
     test "works with gzip compression" do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2],
-          "codecs" => [
-            %{"name" => "bytes"},
-            %{"name" => "gzip", "configuration" => %{"level" => 1}}
-          ],
-          "index_codecs" => [%{"name" => "bytes"}]
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2],
+            "codecs" => [
+              %{"name" => "bytes"},
+              %{"name" => "gzip", "configuration" => %{"level" => 1}}
+            ],
+            "index_codecs" => [%{"name" => "bytes"}]
+          },
+          shard_shape: [4, 4]
+        )
 
       chunks = %{
         {0, 0} => <<1, 2, 3, 4, 5, 6, 7, 8>>,
@@ -229,11 +246,14 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "1D chunks" do
     test "handles 1D chunk indices" do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [10],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}]
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [10],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}]
+          },
+          shard_shape: [100]
+        )
 
       chunks = %{
         {0} => <<1, 2, 3>>,
@@ -250,11 +270,14 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "3D chunks" do
     test "handles 3D chunk indices" do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2, 2],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}]
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2, 2],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}]
+          },
+          shard_shape: [4, 4, 4]
+        )
 
       chunks = %{
         {0, 0, 0} => <<1, 2>>,
@@ -272,11 +295,14 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
   describe "edge cases" do
     test "handles large chunks" do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}]
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}]
+          },
+          shard_shape: [4, 4]
+        )
 
       # 1MB chunk
       large_chunk = :binary.copy(<<42>>, 1_000_000)
@@ -292,11 +318,14 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
 
     test "handles many small chunks" do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [10, 10],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}]
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [10, 10],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}]
+          },
+          shard_shape: [100, 100]
+        )
 
       # 100 chunks
       chunks =
@@ -311,11 +340,14 @@ defmodule ExZarr.Codecs.ShardingIndexedTest do
 
     test "handles empty chunk data" do
       {:ok, codec} =
-        ShardingIndexed.init(%{
-          "chunk_shape" => [2, 2],
-          "codecs" => [%{"name" => "bytes"}],
-          "index_codecs" => [%{"name" => "bytes"}]
-        })
+        ShardingIndexed.init(
+          %{
+            "chunk_shape" => [2, 2],
+            "codecs" => [%{"name" => "bytes"}],
+            "index_codecs" => [%{"name" => "bytes"}]
+          },
+          shard_shape: [4, 4]
+        )
 
       chunks = %{
         {0, 0} => <<>>,

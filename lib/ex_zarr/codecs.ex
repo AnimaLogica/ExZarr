@@ -38,7 +38,7 @@ defmodule ExZarr.Codecs do
 
       def deps do
         [
-          {:ex_zarr, "~> 0.1"},
+          {:ex_zarr, "~> 1.2"},
           {:ezstd, "~> 1.1"},        # For :zstd
           {:nimble_lz4, "~> 0.1.3"}, # For :lz4
           {:snappyer, "~> 1.2"}      # For :snappy

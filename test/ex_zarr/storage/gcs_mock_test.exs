@@ -8,7 +8,31 @@ defmodule ExZarr.Storage.GCSMockTest do
     def get(url, opts) do
       send(self(), {:req_get, url, opts})
 
+      params = Keyword.get(opts, :params, [])
+      headers = Keyword.get(opts, :headers, [])
+
       cond do
+        # Object metadata (no alt=media): size and generation
+        String.contains?(url, "%2Fc%2F") and params[:alt] != "media" ->
+          {:ok, %{status: 200, body: %{"size" => "8", "generation" => "17"}}}
+
+        String.contains?(url, "%2Fc%2F") and params[:ifGenerationMatch] == "stale" ->
+          {:ok, %{status: 412}}
+
+        String.contains?(url, "%2Fc%2F") and List.keymember?(headers, "range", 0) ->
+          {_, "bytes=" <> range} = List.keyfind(headers, "range", 0)
+          [first, last] = range |> String.split("-") |> Enum.map(&String.to_integer/1)
+
+          {:ok,
+           %{status: 206, body: binary_part(<<0, 1, 2, 3, 4, 5, 6, 7>>, first, last - first + 1)}}
+
+        # Only zarr.json exists under the "v3only" prefix
+        String.contains?(url, "v3only%2Fzarr.json") ->
+          {:ok, %{status: 200, body: %{"zarr_format" => 3, "node_type" => "array"}}}
+
+        String.contains?(url, "v3only") ->
+          {:ok, %{status: 404}}
+
         # List objects - URL ends with /o (without object name)
         String.ends_with?(url, "/o") ->
           {:ok, %{status: 200, body: %{"items" => []}}}
@@ -340,7 +364,7 @@ defmodule ExZarr.Storage.GCSMockTest do
       assert_receive {:req_post, _url, opts}
       params = Keyword.get(opts, :params, [])
       name = Keyword.get(params, :name)
-      assert name == "data/arrays/.zarray"
+      assert name == "data/arrays/zarr.json"
     end
   end
 
@@ -537,6 +561,43 @@ defmodule ExZarr.Storage.GCSMockTest do
       assert_receive {:req_post, _url, opts}
       params = Keyword.get(opts, :params, [])
       assert Keyword.get(params, :name) == "data/experiment/0.0"
+    end
+  end
+
+  describe "v3 layout and range reads" do
+    test "zarr_version: 3 selects v3 chunk keys" do
+      {:ok, state} = GCS.init(bucket: "b", prefix: "p", zarr_version: 3, credentials: %{})
+      assert state.zarr_format == 3
+      GCS.read_chunk(state, {1, 2})
+      assert_receive {:req_get, url, _}
+      assert String.ends_with?(url, "p%2Fc%2F1%2F2")
+    end
+
+    test "opening probes zarr.json after .zarray" do
+      {:ok, state} = GCS.init(bucket: "b", prefix: "v3only", credentials: %{})
+      assert {:ok, json} = GCS.read_metadata(state)
+      assert %{"zarr_format" => 3} = Jason.decode!(json)
+      assert_receive {:req_get, first, _}
+      assert String.ends_with?(first, "v3only%2F.zarray")
+      assert_receive {:req_get, second, _}
+      assert String.ends_with?(second, "v3only%2Fzarr.json")
+    end
+
+    test "chunk_info returns size and generation" do
+      {:ok, state} = GCS.init(bucket: "b", prefix: "p", zarr_format: 3, credentials: %{})
+      assert {:ok, %{size: 8, etag: "17"}} = GCS.chunk_info(state, {0, 0})
+    end
+
+    test "range reads send Range and ifGenerationMatch" do
+      {:ok, state} = GCS.init(bucket: "b", prefix: "p", zarr_format: 3, credentials: %{})
+
+      assert {:ok, <<2, 3, 4>>} = GCS.read_chunk_range(state, {0, 0}, 2, 3, if_match: "17")
+      assert_receive {:req_get, _url, opts}
+      assert {"range", "bytes=2-4"} in opts[:headers]
+      assert opts[:params][:ifGenerationMatch] == "17"
+
+      assert {:error, :precondition_failed} =
+               GCS.read_chunk_range(state, {0, 0}, 2, 3, if_match: "stale")
     end
   end
 

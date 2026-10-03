@@ -1,0 +1,57 @@
+# Image Archives in Zarr
+
+```elixir
+Mix.install([
+  {:ex_zarr, "~> 1.2"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
+])
+```
+
+## Pattern
+
+Treat each chunk as an image tile. Stream with metadata to recover bounds, then
+write processed tiles back with `write_stream/3`.
+
+```elixir
+alias ExZarr.Array
+alias ExZarr.Gallery.Pack
+
+{:ok, source} =
+  Array.create(
+    shape: {64, 64},
+    chunks: {16, 16},
+    dtype: :uint8,
+    compressor: :zlib,
+    storage: :memory
+  )
+
+vals = for i <- 0..(64 * 64 - 1), do: rem(i, 256)
+:ok = Array.set_slice(source, Pack.pack(vals, :uint8), start: {0, 0}, stop: {64, 64})
+
+{:ok, output} =
+  Array.create(
+    shape: {64, 64},
+    chunks: {16, 16},
+    dtype: :uint8,
+    compressor: :zlib,
+    storage: :memory
+  )
+
+# Invert tiles as a stand-in for image processing
+tiles =
+  source
+  |> Array.stream_chunks(concurrency: 4, metadata: true)
+  |> Enum.map(fn %{index: idx, data: tile, metadata: meta} ->
+    inverted =
+      for <<b::8 <- tile>>, into: <<>> do
+        <<255 - b::8>>
+      end
+
+    {idx, inverted, meta}
+  end)
+
+%{tiles: length(tiles), sample_bounds: tiles |> hd() |> elem(2)}
+```
+
+Each chunk corresponds to a spatial tile. Use `metadata: true` to recover pixel
+bounds without separate coordinate math.

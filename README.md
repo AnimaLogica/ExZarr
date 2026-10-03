@@ -3,19 +3,22 @@
 
 [![Hex version](https://img.shields.io/hexpm/v/ex_zarr.svg)](https://hex.pm/packages/ex_zarr)
 [![Hex docs](https://img.shields.io/badge/docs-hexdocs.pm-blue)](https://hexdocs.pm/ex_zarr)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/thanos/ExZarr/blob/main/LICENSE)
-[![CI](https://github.com/thanos/ExZarr/actions/workflows/ci.yml/badge.svg)](https://github.com/thanos/ExZarr/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/thanos/ExZarr/badge.svg?branch=main)](https://coveralls.io/github/thanos/ExZarr?branch=main)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/AnimaLogica/ExZarr/blob/main/LICENSE)
+[![CI](https://github.com/AnimaLogica/ExZarr/actions/workflows/ci.yml/badge.svg)](https://github.com/AnimaLogica/ExZarr/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/AnimaLogica/ExZarr/badge.svg?branch=main)](https://coveralls.io/github/AnimaLogica/ExZarr?branch=main)
 
 
 Elixir implementation of [Zarr](https://zarr.dev): compressed, chunked, N-dimensional arrays designed for parallel computing and scientific data storage.
 
-**Full Zarr v3 Support:** ExZarr implements both Zarr v2 and v3 specifications with production-ready support for v3's unified codec pipeline, improved metadata format, and modern features. Automatic version detection ensures seamless interoperability. See [ZARR_V3_STATUS.md](ZARR_V3_STATUS.md) for complete v3 support details.
+**Zarr v3.1 core support:** ExZarr implements Zarr v2 and Zarr core v3.1 for the
+documented dtype/codec subset, with automatic version detection and Python
+interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
+[ZARR_V3_STATUS.md](docs/ZARR_V3_STATUS.md) for details and known limitations.
 
 ## Features
 
 - **Zarr v3 and v2 Support** - Full implementation of both specifications with automatic version detection
-- **High Performance** - 26x faster multi-chunk reads with near-optimal scaling (see [Performance Guide](guides/performance.md))
+- **High Performance** - 26x faster multi-chunk reads with near-optimal scaling (see [Performance Guide](docs/guides/performance.md))
 - **N-dimensional arrays** with support for 10 data types (int8-64, uint8-64, float32/64)
 - **BEAM-native streaming** - `stream_chunks/2`, `stream_slices/3`, and `write_stream/3` for bounded-memory processing
 - **Telemetry** - `:telemetry` events for chunk I/O and stream lifecycle (`ExZarr.Telemetry`)
@@ -36,7 +39,7 @@ Add `ex_zarr` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.1"}
+    {:ex_zarr, "~> 1.2"}
   ]
 end
 ```
@@ -101,7 +104,7 @@ array
 |> Enum.each(fn {_start, row} -> process_row(row) end)
 ```
 
-Attach telemetry handlers for production observability - see [guides/telemetry.md](guides/telemetry.md).
+Attach telemetry handlers for production observability - see [docs/guides/telemetry.md](docs/guides/telemetry.md).
 
 ```elixir
 ExZarr.Array.write_stream(array, chunk_stream,
@@ -110,7 +113,7 @@ ExZarr.Array.write_stream(array, chunk_stream,
 )
 ```
 
-See [migration_guide_v1_1_0.md](migration_guide_v1_1_0.md) and [docs/educational/v1_1_streaming_guide.md](docs/educational/v1_1_streaming_guide.md).
+See [migration_guide_v1_1_0.md](docs/migration_guide_v1_1_0.md) and [docs/educational/v1_1_streaming_guide.md](docs/educational/v1_1_streaming_guide.md).
 
 ## Performance
 
@@ -127,7 +130,7 @@ ExZarr v0.8+ includes major performance optimizations:
 - After: 4.2ms per read
 - **Speedup: 26×**
 
-See [Performance Guide](guides/performance.md) for tuning recommendations and [Benchmarks](benchmarks/README.md) for running your own tests.
+See [Performance Guide](docs/guides/performance.md) for tuning recommendations and [Benchmarks](benchmarks/README.md) for running your own tests.
 
 ```bash
 # Run quick performance check (completes in 6 seconds)
@@ -261,7 +264,7 @@ This demonstrates:
 - Creating arrays with Python that ExZarr can read
 - Compatible metadata and compression
 
-**For detailed interoperability information, see [INTEROPERABILITY.md](INTEROPERABILITY.md)** which covers:
+**For detailed interoperability information, see [INTEROPERABILITY.md](docs/INTEROPERABILITY.md)** which covers:
 
 - Data type compatibility table
 - Compression compatibility guidelines
@@ -529,7 +532,7 @@ ExZarr includes several pre-built storage backends for cloud services and databa
 
 ```elixir
 # Add dependency
-{:azurex, "~> 0.3"}
+{:azure_sdk, "~> 0.4.1"}
 
 # Register and use
 :ok = ExZarr.Storage.Registry.register(ExZarr.Storage.Backend.AzureBlob)
@@ -550,7 +553,7 @@ ExZarr includes several pre-built storage backends for cloud services and databa
 ```elixir
 # Add dependencies
 {:goth, "~> 1.4"},
-{:req, "~> 0.4"}
+{:req, "~> 0.6.1"}
 
 # Register and use
 :ok = ExZarr.Storage.Registry.register(ExZarr.Storage.Backend.GCS)
@@ -652,7 +655,9 @@ assert_received {:mock_storage, :write_chunk, _}
 ExZarr uses:
 
 - **Erlang :zlib** for zlib/gzip compression
-- **Zig NIFs** (`ExZarr.Codecs.ZigCodecs`) for zstd, lz4, snappy, blosc, bzip2, and crc32c
+- **Zig NIFs** (`ExZarr.Codecs.ZigCodecs`) for zstd, lz4, snappy, blosc, bzip2, and crc32c —
+  Hex/Livebook installs use **precompiled** artifacts (Zig not required); see
+  [`PRECOMPILATION.md`](docs/PRECOMPILATION.md)
 - **GenServer** for array state management
 - **Lazy streams** (`Stream.resource/3`, `Task.async_stream/3`) for bounded-memory chunk I/O
 - **Optional pipeline modules** (`ExZarr.Flow`, `ExZarr.GenStage`, `ExZarr.Broadway`) for backpressure and fault tolerance
@@ -664,8 +669,9 @@ ExZarr uses:
 
 ## Development
 
-Requires **Elixir ~> 1.14**, **OTP 25+**, and **Zig 0.16.0** for codec NIF compilation (via zigler 0.16).
-Install compression libraries before compiling:
+Requires **Elixir ~> 1.17** and **OTP 25+**. Codec NIFs are **precompiled** for
+published Hex releases (no Zig needed). Local/source builds need **Zig 0.16.0**
+(via zigler) and system compression libraries:
 
 ```bash
 # macOS
@@ -679,7 +685,7 @@ sudo apt-get install libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-de
 # Install dependencies
 mix deps.get
 
-# Compile the project (requires zig 0.16 on PATH)
+# Compile (dev/test force a Zig source build; or EX_ZARR_BUILD=1)
 mix compile
 
 # Run tests
@@ -762,14 +768,19 @@ Key testing areas:
 
 ### Python Integration Tests
 
-ExZarr includes integration tests that verify compatibility with Python's zarr library:
+ExZarr includes integration tests that verify compatibility with Python's zarr library.
+Full local setup (v2 on Python 3.11, v3 on Python ≥ 3.12, fixtures, Mix tags) is in
+**[Testing Python Interoperability](docs/INTEROPERABILITY.md#testing-python-interoperability)**.
 
 ```bash
-# Install Python dependencies (one-time setup)
-./test/support/setup_python_tests.sh
-
-# Run integration tests
-mix test test/ex_zarr_python_integration_test.exs
+# Zarr v3 example (Python ≥ 3.12)
+python3.12 -m venv .venv-zarr3 && source .venv-zarr3/bin/activate
+pip install 'zarr==3.4.0' numpy
+OUT=/tmp/zarr_fixtures_v3
+python test/support/python_fixtures/generate_fixtures.py --out "$OUT" --zarr-major 3
+export EXZARR_PYTHON_FIXTURES="$OUT"
+mix test --only python_fixtures
+mix test --include python test/ex_zarr_v3_python_interop_test.exs
 ```
 
 These tests verify that:
@@ -780,7 +791,7 @@ These tests verify that:
 - Metadata is correctly interpreted by both implementations
 - Compression (zlib) works correctly across implementations
 
-**Requirements**: Python 3.6+, zarr-python 2.x, numpy
+**Requirements**: Python 3.11+ (v2) or 3.12+ (v3), matching zarr-python, numpy
 
 ## Documentation
 
@@ -788,19 +799,20 @@ These tests verify that:
 
 Comprehensive guides for all skill levels:
 
-- **[Getting Started](guides/quickstart.md)** - New to ExZarr? Start here!
+- **[What is Zarr?](docs/guides/what_is_zarr.md)** — format overview
+- **[Quick Start](#quick-start)** — create, write, read, save/open, and streaming
   - Installation and basic concepts
   - Creating and opening arrays
   - Reading and writing data
-  - Choosing chunk sizes
+  - Streaming large arrays
   - Common patterns and best practices
-- **[Advanced Usage](guides/performance.md)** - Deep dive into advanced features
+- **[Advanced Usage](docs/guides/performance.md)** - Deep dive into advanced features
   - Zarr v3 features (sharding, dimension names, codec pipeline)
   - Custom chunk grids (regular and irregular)
   - Cloud storage optimization (S3, GCS, Azure)
   - Performance tuning and profiling
   - Custom storage backends and codecs
-- **[Migration from Python](guides/python_interop.md)** - For zarr-python users
+- **[Migration from Python](docs/guides/python_interop.md)** - For zarr-python users
   - API comparison and translation guide
   - Data structure differences (NumPy arrays vs nested tuples)
   - Converting between Python and Elixir
@@ -866,20 +878,19 @@ Key modules:
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full release plan.
+See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
-**v1.1.0 (current)** - BEAM-native streaming: `stream_chunks/2`, `stream_slices/3`,
-`write_stream/3`, telemetry, Flow/GenStage/Broadway integrations, cloud patterns
-guide, and production cookbook.
+**v1.2.0 (released 2026-10-03)** - Zarr 3.1 interoperability & range-aware cloud I/O:
+spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
+AzureSDK migration, precompiled Zig NIFs, Python fixture/CI matrix.
 
 **Upcoming** (high level):
 
-- **v1.2.0**  - **Cloud storage & reliability**
-  Unified retry/backoff for S3/GCS/Azure, Azure SDK migration, v3 async store read alignment, cloud integration tests.
 - **v1.3.0** - **Data science interop**
   Explorer streaming, Nx batch recipes from `stream_chunks`, livebook curriculum, cookbook expansion.
 - **v1.4.0** - **Performance & packaging**
-  Async codec pipeline (overlap I/O + decode), vendored/static codecs (drop apt/brew deps), PackBits/Categorize filters, sharding improvements.
+  Async codec pipeline (overlap I/O + decode), vendored/static codecs, adaptive range coalescing,
+  storage-transformer execution.
 - **v2.0.0** - **Distributed processing**
   Horde/`:pg` multi-node chunk work, `PartitionSupervisor` pools, cross-node telemetry, distributed Broadway topologies.
 

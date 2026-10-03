@@ -7,7 +7,7 @@ if Code.ensure_loaded?(Broadway) do
 
         {:broadway, "~> 1.0"}
 
-    See `livebooks/broadway_pipeline.livemd` for a complete example.
+    See `docs/livebooks/broadway_pipeline.livemd` for a complete example.
     """
 
     alias ExZarr.Array

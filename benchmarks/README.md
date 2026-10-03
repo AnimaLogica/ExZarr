@@ -1,4 +1,4 @@
-# ExZarr Benchmarks
+# Benchmarks
 
 Comprehensive benchmarking suite for ExZarr performance testing.
 
@@ -235,4 +235,4 @@ When adding new benchmarks:
 ## See Also
 
 - [Performance Guide](performance.md) - Optimization recommendations
-- [Performance Improvements](PERFORMANCE_IMPROVEMENTS.md) - Technical details of v0.8.0 optimizations
+- [Performance Improvements](../docs/PERFORMANCE_IMPROVEMENTS.md) - Technical details of v0.8.0 optimizations
