@@ -157,7 +157,7 @@ Add to `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.0"},
+    {:ex_zarr, "~> 1.2"},
     {:ex_aws, "~> 2.5"},
     {:ex_aws_s3, "~> 2.5"},
     {:sweet_xml, "~> 0.7"}  # For XML response parsing
@@ -353,7 +353,7 @@ Add to `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.0"},
+    {:ex_zarr, "~> 1.2"},
     {:goth, "~> 1.4"},      # Authentication
     {:req, "~> 0.6.1"}      # HTTP client
   ]
@@ -490,7 +490,7 @@ Add to `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.0"},
+    {:ex_zarr, "~> 1.2"},
     {:azure_sdk, "~> 0.4.1"}
   ]
 end
@@ -641,7 +641,7 @@ Stores large chunks in MongoDB using GridFS.
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.0"},
+    {:ex_zarr, "~> 1.2"},
     {:mongodb_driver, "~> 1.4"}
   ]
 end

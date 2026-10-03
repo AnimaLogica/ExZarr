@@ -241,7 +241,7 @@ end
 :ok = ExZarr.Array.put_attributes(array, %{
   "units" => "counts",
   "description" => "Processing results from Elixir pipeline",
-  "created_by" => "ExZarr v1.0.0",
+  "created_by" => "ExZarr v1.2.0",
   "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
 })
 
@@ -305,7 +305,7 @@ Compressor: Zlib(level=6)
 Attributes:
   units: counts
   description: Processing results from Elixir pipeline
-  created_by: ExZarr v1.0.0
+  created_by: ExZarr v1.2.0
   timestamp: 2026-01-29T10:30:00Z
 
 Data type: <class 'numpy.ndarray'>

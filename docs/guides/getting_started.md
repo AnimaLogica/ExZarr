@@ -17,7 +17,7 @@ Add `ex_zarr` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.0"}
+    {:ex_zarr, "~> 1.2"}
   ]
 end
 ```
@@ -536,5 +536,5 @@ end)
 
 - **Documentation**: https://hexdocs.pm/ex_zarr
 - **Examples**: Browse `examples/` directory
-- **Issues**: https://github.com/elixir-zarr/ex_zarr/issues
+- **Issues**: https://github.com/AnimaLogica/ExZarr/issues
 - **Zarr specification**: https://zarr-specs.readthedocs.io/

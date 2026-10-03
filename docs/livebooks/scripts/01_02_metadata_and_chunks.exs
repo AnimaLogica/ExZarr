@@ -3,7 +3,7 @@
 # Title: Metadata and Chunks: Inside a Zarr Array
 
 Mix.install([
-  {:ex_zarr, "~> 1.0"},
+  {:ex_zarr, "~> 1.2"},
   {:kino, "~> 0.13"},
   {:jason, "~> 1.4"}
 ])

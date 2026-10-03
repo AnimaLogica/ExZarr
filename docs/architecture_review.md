@@ -85,6 +85,16 @@ v1.1.0 introduces:
 - `ExZarr.Flow`, `ExZarr.GenStage`, `ExZarr.Broadway` - optional pipeline integrations
 - Shared streaming internals (internal module behind Array streaming APIs)
 
+## v1.2.0 Changes
+
+v1.2.0 adds:
+
+- Spec-correct `sharding_indexed` v1.0 with zarr-python interoperability
+- Optional byte-range storage (`chunk_info` / `read_chunk_range`) and range-aware shard reads
+- Version-aware cloud object keys; Azure Blob on `azure_sdk`
+- Precompiled Zig codec NIFs (`ZiglerPrecompiled`)
+- Python fixture generator + CI matrix (zarr-python 2.18 / 3.2 / 3.3 / 3.4)
+
 ## BEAM-Specific Considerations
 
 - Lazy `Stream.resource/3` for sequential reads keeps memory bounded

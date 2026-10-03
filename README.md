@@ -3,9 +3,9 @@
 
 [![Hex version](https://img.shields.io/hexpm/v/ex_zarr.svg)](https://hex.pm/packages/ex_zarr)
 [![Hex docs](https://img.shields.io/badge/docs-hexdocs.pm-blue)](https://hexdocs.pm/ex_zarr)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/thanos/ExZarr/blob/main/LICENSE)
-[![CI](https://github.com/thanos/ExZarr/actions/workflows/ci.yml/badge.svg)](https://github.com/thanos/ExZarr/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/thanos/ExZarr/badge.svg?branch=main)](https://coveralls.io/github/thanos/ExZarr?branch=main)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/AnimaLogica/ExZarr/blob/main/LICENSE)
+[![CI](https://github.com/AnimaLogica/ExZarr/actions/workflows/ci.yml/badge.svg)](https://github.com/AnimaLogica/ExZarr/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/AnimaLogica/ExZarr/badge.svg?branch=main)](https://coveralls.io/github/AnimaLogica/ExZarr?branch=main)
 
 
 Elixir implementation of [Zarr](https://zarr.dev): compressed, chunked, N-dimensional arrays designed for parallel computing and scientific data storage.
@@ -880,9 +880,9 @@ Key modules:
 
 See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
-**v1.2.0 (current)** - Zarr 3.1 interoperability & range-aware cloud I/O:
+**v1.2.0 (released 2026-10-03)** - Zarr 3.1 interoperability & range-aware cloud I/O:
 spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
-AzureSDK migration, Python fixture/CI matrix.
+AzureSDK migration, precompiled Zig NIFs, Python fixture/CI matrix.
 
 **Upcoming** (high level):
 

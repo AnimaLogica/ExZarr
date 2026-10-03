@@ -1,6 +1,8 @@
 # Roadmap
 
-## v1.2.0 (Current) — Zarr 3.1 Interoperability & Range-Aware Cloud I/O
+## v1.2.0 — Zarr 3.1 Interoperability & Range-Aware Cloud I/O
+
+Released 2026-10-03. Backward compatible with v1.1 (rewrite pre-1.2 private shards).
 
 - [x] Zarr 3.1 metadata: scalars, zero-length dims, dimension names, extensions, `storage_transformers`
 - [x] Spec-correct `sharding_indexed` v1.0

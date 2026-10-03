@@ -1343,7 +1343,7 @@ When reporting issues:
 
 ### Report Issues
 
-GitHub Issues: [https://github.com/thanos/ExZarr/issues](https://github.com/thanos/ExZarr/issues)
+GitHub Issues: [https://github.com/AnimaLogica/ExZarr/issues](https://github.com/AnimaLogica/ExZarr/issues)
 
 **Include in your report**:
 - ExZarr version: `Mix.Project.config()[:version]`
@@ -1358,7 +1358,7 @@ GitHub Issues: [https://github.com/thanos/ExZarr/issues](https://github.com/than
 
 ```markdown
 ## Environment
-- ExZarr version: 1.0.0
+- ExZarr version: 1.2.0
 - Elixir version: 1.19.5
 - Erlang/OTP version: 28.1
 - OS: macOS 15.2 (arm64)

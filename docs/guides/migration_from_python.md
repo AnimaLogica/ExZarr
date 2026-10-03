@@ -38,7 +38,7 @@ pip install zarr
 # In mix.exs
 def deps do
   [
-    {:ex_zarr, "~> 1.0"}
+    {:ex_zarr, "~> 1.2"}
   ]
 end
 ```

@@ -79,7 +79,7 @@ defmodule ExZarr.Codecs.ZigCodecs do
 
   use ZiglerPrecompiled,
     otp_app: :ex_zarr,
-    base_url: "https://github.com/thanos/ExZarr/releases/download/v#{@version}",
+    base_url: "https://github.com/AnimaLogica/ExZarr/releases/download/v#{@version}",
     version: @version,
     force_build: @force_build,
     targets: ~w(

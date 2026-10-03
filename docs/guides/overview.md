@@ -14,7 +14,7 @@ ExZarr implements the Zarr specification entirely in Elixir, providing persisten
 - Cross-language data exchange (Elixir <-> Python/Julia/R)
 
 **Production Status:**
-ExZarr v1.0.0+ is production-ready, with comprehensive test coverage including property-based tests and Python interoperability validation. The library provides full production support for both Zarr v2 and Zarr v3 specifications, with automatic format detection and seamless interoperability.
+ExZarr v1.2.0+ is production-ready, with comprehensive test coverage including property-based tests and Python interoperability validation. The library provides full production support for both Zarr v2 and Zarr v3 specifications, with automatic format detection and seamless interoperability.
 
 **Not a Python Wrapper:**
 ExZarr does not wrap Python's zarr-python library or call Python code. It is a ground-up implementation in Elixir that reads and writes the same on-disk/cloud format, ensuring interoperability through specification compliance rather than library coupling.

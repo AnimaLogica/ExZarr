@@ -23,7 +23,7 @@ This guide shows how to integrate ExZarr with Nx (Numerical Elixir) for numerica
 ```elixir
 # Install dependencies
 Mix.install([
-  {:ex_zarr, "~> 1.0"},
+  {:ex_zarr, "~> 1.2"},
   {:nx, "~> 0.7"}
 ])
 

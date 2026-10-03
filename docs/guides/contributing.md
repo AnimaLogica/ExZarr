@@ -56,7 +56,7 @@ git clone https://github.com/YOUR_USERNAME/ExZarr.git
 cd ExZarr
 
 # Add upstream remote
-git remote add upstream https://github.com/thanos/ExZarr.git
+git remote add upstream https://github.com/AnimaLogica/ExZarr.git
 
 # Install dependencies
 mix deps.get
@@ -1273,4 +1273,4 @@ Thank you for contributing to ExZarr! Every contribution helps make the library 
 - [Zarr Specification](https://zarr-specs.readthedocs.io/)
 - [Zigler Documentation](https://hexdocs.pm/zigler/)
 
-For questions, open an issue on GitHub: [https://github.com/thanos/ExZarr/issues](https://github.com/thanos/ExZarr/issues)
+For questions, open an issue on GitHub: [https://github.com/AnimaLogica/ExZarr/issues](https://github.com/AnimaLogica/ExZarr/issues)

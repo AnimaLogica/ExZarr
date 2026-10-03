@@ -182,7 +182,7 @@ v3 is fully supported now. We recommend it for new projects. The default will sh
 ## Questions or Issues?
 
 If you encounter any v3-related issues or have questions:
-- Open an issue: https://github.com/thanos/ExZarr/issues
+- Open an issue: https://github.com/AnimaLogica/ExZarr/issues
 - Check documentation: https://hexdocs.pm/ex_zarr
 - Review examples: `examples/` directory
 
