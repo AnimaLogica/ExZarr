@@ -43,6 +43,7 @@ jobs:
 
       - name: Install MSYS2 compression libraries (Windows)
         if: runner.os == 'Windows'
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
           # MINGW64 is deprecated; UCRT64 is the current MinGW environment
@@ -73,15 +74,26 @@ jobs:
           ZIGLER_RELEASE_MODE: fast
           ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
           ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
+          # Absolute Windows path from setup-msys2 (Git Bash maps bare /ucrt64
+          # under Program Files\Git, which breaks Zig -L/-I).
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           set -euo pipefail
 
-          # MSYS2 UCRT64 paths (semicolon sep — Windows drive letters contain ':')
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            prefix="${MSYSTEM_PREFIX:-/ucrt64}"
+            if [[ -z "${MSYS2_LOCATION:-}" ]]; then
+              echo "MSYS2_LOCATION is empty; setup-msys2 did not report a path" >&2
+              exit 1
+            fi
+            # D:\a\_temp\msys64 -> D:/a/_temp/msys64/ucrt64 (Zig wants drive paths)
+            prefix="${MSYS2_LOCATION//\\//}/ucrt64"
             export COMPRESSION_LIB_DIRS="${prefix}/lib"
             export COMPRESSION_INCLUDE_DIRS="${prefix}/include"
             export PATH="${prefix}/bin:${PATH}"
+            echo "COMPRESSION_LIB_DIRS=${COMPRESSION_LIB_DIRS}"
+            test -d "${COMPRESSION_LIB_DIRS}"
+            test -f "${COMPRESSION_LIB_DIRS}/libzstd.dll.a" \
+              || test -f "${COMPRESSION_LIB_DIRS}/libzstd.a"
           fi
 
           mix local.hex --force
