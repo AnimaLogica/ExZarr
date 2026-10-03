@@ -45,16 +45,17 @@ jobs:
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          # MINGW64 is deprecated; UCRT64 is the current MinGW environment
+          msystem: UCRT64
           update: true
           path-type: inherit
           install: >-
-            mingw-w64-x86_64-zstd
-            mingw-w64-x86_64-lz4
-            mingw-w64-x86_64-snappy
-            mingw-w64-x86_64-c-blosc
-            mingw-w64-x86_64-bzip2
-            mingw-w64-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-zstd
+            mingw-w64-ucrt-x86_64-lz4
+            mingw-w64-ucrt-x86_64-snappy
+            mingw-w64-ucrt-x86_64-blosc
+            mingw-w64-ucrt-x86_64-bzip2
+            mingw-w64-ucrt-x86_64-pkgconf
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
@@ -75,9 +76,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # MSYS2 MinGW64 paths (semicolon sep — Windows drive letters contain ':')
+          # MSYS2 UCRT64 paths (semicolon sep — Windows drive letters contain ':')
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            prefix="${MSYSTEM_PREFIX:-/mingw64}"
+            prefix="${MSYSTEM_PREFIX:-/ucrt64}"
             export COMPRESSION_LIB_DIRS="${prefix}/lib"
             export COMPRESSION_INCLUDE_DIRS="${prefix}/include"
             export PATH="${prefix}/bin:${PATH}"

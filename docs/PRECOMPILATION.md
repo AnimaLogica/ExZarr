@@ -14,7 +14,7 @@ Livebook users do not need a Zig toolchain.
 Artifacts are built **natively** on each OS (no cross-link against system
 compression libs). They still **dynamically link** `zstd`, `lz4`, `snappy`,
 `blosc`, and `bz2` at runtime — install those packages on the host.
-Windows CI uses MSYS2 MinGW64 packages for the link step.
+Windows CI uses MSYS2 UCRT64 packages for the link step.
 
 ## Force a source build
 
