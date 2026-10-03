@@ -11,7 +11,7 @@ ExZarr implements the Zarr v2 specification for compatibility with other Zarr im
 - [Metadata Format](#metadata-format)
 - [File Structure](#file-structure)
 - [Examples](#examples)
-- [Testing Interoperability](#testing-interoperability)
+- [Testing Python Interoperability](#testing-python-interoperability)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
@@ -345,19 +345,56 @@ This demonstrates:
 3. Creating a 20×20 array with zarr-python
 4. Reading it with ExZarr
 
-## Testing Interoperability
+## Testing Python Interoperability
 
-### Running Integration Tests
+These suites are **excluded by default** (`:python` / `:python_fixtures` in
+`test/test_helper.exs`). Mirror the CI `python-interop` job locally as follows.
 
-ExZarr includes comprehensive integration tests:
+### Zarr v3 (3.2 / 3.3 / 3.4) — requires Python ≥ 3.12
 
 ```bash
-# Setup Python environment (one time)
-./test/support/setup_python_tests.sh
+python3.12 -m venv .venv-zarr3 && source .venv-zarr3/bin/activate
+pip install -U pip
+pip install 'zarr==3.4.0' numpy   # or 3.2.1 / 3.3.0
 
-# Run integration tests
-mix test test/ex_zarr_python_integration_test.exs
+OUT=/tmp/zarr_fixtures_v3
+python test/support/python_fixtures/generate_fixtures.py --out "$OUT" --zarr-major 3
+
+export EXZARR_PYTHON_FIXTURES="$OUT"
+mix test --only python_fixtures
+mix test --include python test/ex_zarr_v3_python_interop_test.exs
 ```
+
+Optional showcase (CI runs this only for zarr 3.4.0):
+
+```bash
+mix run examples/range_aware_sharded_nx.exs
+```
+
+### Zarr v2 (2.18.x) — Python 3.11 is fine
+
+```bash
+python3.11 -m venv .venv-zarr2 && source .venv-zarr2/bin/activate
+pip install -U pip
+pip install 'zarr==2.18.3' 'numcodecs<0.16' numpy
+
+OUT=/tmp/zarr_fixtures_v2
+python test/support/python_fixtures/generate_fixtures.py --out "$OUT" --zarr-major 2
+
+export EXZARR_PYTHON_FIXTURES="$OUT"
+mix test --only python_fixtures
+mix test --include python test/ex_zarr_python_integration_test.exs
+```
+
+For the older v2 helper path you can also run `./test/support/setup_python_tests.sh`,
+then the same `mix test --include python …` commands.
+
+### Notes
+
+- The `python` executable used by Mix tests must be on `PATH` (tests shell out to it).
+- Elixir/Zig/system libs are the same as a normal ExZarr test run (`mix deps.get`, Zig for NIFs).
+- Without `--include python` / `--only python_fixtures`, these tests are skipped.
+- Fixture generator details: `test/support/python_fixtures/README.md`.
 
 ### What the Tests Verify
 

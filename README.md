@@ -768,14 +768,19 @@ Key testing areas:
 
 ### Python Integration Tests
 
-ExZarr includes integration tests that verify compatibility with Python's zarr library:
+ExZarr includes integration tests that verify compatibility with Python's zarr library.
+Full local setup (v2 on Python 3.11, v3 on Python ≥ 3.12, fixtures, Mix tags) is in
+**[Testing Python Interoperability](docs/INTEROPERABILITY.md#testing-python-interoperability)**.
 
 ```bash
-# Install Python dependencies (one-time setup)
-./test/support/setup_python_tests.sh
-
-# Run integration tests
-mix test test/ex_zarr_python_integration_test.exs
+# Zarr v3 example (Python ≥ 3.12)
+python3.12 -m venv .venv-zarr3 && source .venv-zarr3/bin/activate
+pip install 'zarr==3.4.0' numpy
+OUT=/tmp/zarr_fixtures_v3
+python test/support/python_fixtures/generate_fixtures.py --out "$OUT" --zarr-major 3
+export EXZARR_PYTHON_FIXTURES="$OUT"
+mix test --only python_fixtures
+mix test --include python test/ex_zarr_v3_python_interop_test.exs
 ```
 
 These tests verify that:
@@ -786,7 +791,7 @@ These tests verify that:
 - Metadata is correctly interpreted by both implementations
 - Compression (zlib) works correctly across implementations
 
-**Requirements**: Python 3.6+, zarr-python 2.x, numpy
+**Requirements**: Python 3.11+ (v2) or 3.12+ (v3), matching zarr-python, numpy
 
 ## Documentation
 

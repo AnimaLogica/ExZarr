@@ -106,8 +106,12 @@ export TEST_AZURE_CONTAINER="your-test-container"
 # MongoDB (start local instance)
 docker run -d -p 27017:27017 mongo:5.0
 
-# Python Integration Tests
-pip3 install 'zarr>=2.10.0,<3.0.0' numpy
+# Python Integration Tests — see docs/INTEROPERABILITY.md#testing-python-interoperability
+# v2: Python 3.11 + zarr 2.18.x; v3: Python ≥ 3.12 + zarr 3.2+
+# Generate fixtures, set EXZARR_PYTHON_FIXTURES, then:
+#   mix test --only python_fixtures
+#   mix test --include python test/ex_zarr_python_integration_test.exs   # v2
+#   mix test --include python test/ex_zarr_v3_python_interop_test.exs    # v3
 ```
 
 3. **Mnesia Setup** (no external service needed, but requires initialization)
@@ -130,8 +134,9 @@ mix test --include mongo
 # Run Mnesia tests
 mix test --include mnesia
 
-# Run Python integration tests
+# Run Python integration tests (see Testing Python Interoperability)
 mix test --include python
+mix test --only python_fixtures
 
 # Run all integration tests
 mix test --include s3 --include gcs --include azure --include mongo --include mnesia --include python
