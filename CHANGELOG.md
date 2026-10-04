@@ -7,65 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- `compressor_config:` option for `ExZarr.create/1` (e.g. `[level: 9]`; Blosc
-  also `cname`, `shuffle`, `typesize`), validated per compressor by the new
-  `ExZarr.Codecs.CompressorConfig`. v2 arrays store the settings in `.zarray`
-  in numcodecs form and reuse them after reopening (including arrays created
-  by zarr-python); v3 arrays store them in the codec configuration. The
-  option was documented before but never implemented.
-- `compressor: :gzip` for Zarr v3 arrays.
-
-### Fixed
-- `config :ex_zarr, default_zarr_version` is now applied by `ExZarr.create/1`
-  and `ExZarr.Nx`. Unset, new arrays remain v2; `ExZarr.Version` previously
-  documented (and returned) 3 although nothing used it.
-- `ExZarr.create/1` rejects unknown compressors, invalid compressor settings
-  and Zarr versions other than 2 or 3 with an error tuple. Previously an
-  unknown compressor failed on the first write and an invalid version raised.
-- Zarr v3 arrays created with a compressor that has no v3 codec (`:snappy`,
-  custom codecs without `codecs:`) were silently stored uncompressed; they now
-  return `{:error, {:unsupported_codec_for_v3, compressor}}`.
-- `:zlib` honours a compression `level`.
-- v2 `.zarray` compressor levels now record the level ExZarr actually uses
-  (zlib 6, zstd 3) instead of a fixed 5.
-
-### Changed
-- Compression codecs (zstd, lz4, snappy, blosc, bzip2, crc32c) now come from
-  [ExCodecs](https://hex.pm/packages/ex_codecs) `~> 0.2.4`: pure-Rust NIFs
-  with precompiled binaries for macOS, Linux (glibc and musl) and Windows.
-  ExZarr no longer contains native code; Zig, zigler, zigler_precompiled and
-  system compression libraries are no longer needed.
-- `:lz4` writes the numcodecs `LZ4` format (4-byte little-endian size prefix)
-  and `:bzip2` writes plain bzip2 streams (numcodecs `BZ2`), so zarr-python can
-  read them. Data written by earlier ExZarr versions (8-byte size prefix) is
-  still read.
-- v2 `.zarray` compressor metadata uses numcodecs configurations: `lz4`
-  (`acceleration`), `blosc` (`cname`, `clevel`, `shuffle`, `blocksize`) and
-  `bz2` (previously `bzip2`). The old `bzip2` id is still read. zarr-python can
-  now open ExZarr v2 arrays compressed with lz4, blosc and bzip2.
-- The v3 `blosc` codec honours `cname`, `clevel`, `shuffle` and `typesize` from
-  its configuration; without them ExZarr keeps BloscLZ, byte shuffle,
-  typesize 1.
-- Decompressed chunks are capped at 256 MiB (`config :ex_zarr,
-  max_chunk_bytes: ...`) to guard against decompression bombs.
-- Minimum OTP is 26 (ExCodecs NIFs target NIF 2.17).
-- `ExZarr.Codecs.compress/3` accepts options as a map as well as a keyword list.
-
-### Removed
-- `ExZarr.Codecs.ZigCodecs`, `ExZarr.Codecs.CompressionConfig`, the
-  `fix_nif_rpaths` Mix task, the precompile workflow and
-  `docs/PRECOMPILATION.md` / `docs/COMPRESSION_SETUP.md`.
-- `COMPRESSION_LIB_DIRS`, `HOMEBREW_PREFIX`, `BZIP2_STATIC_LIB`, `ZIG_PATH` and
-  `EX_ZARR_BUILD` no longer have any effect.
-
-## [1.2.0] - 2026-10-03
+## [1.2.0] - 2026-10-04
 
 ### Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 
 ### Added
-- Precompiled Zig NIFs for `ExZarr.Codecs.ZigCodecs` via ZiglerPrecompiled
-  (Linux/macOS x86_64 + aarch64); see `docs/PRECOMPILATION.md`
 - Optional storage backend callbacks: `chunk_info/2`, `read_chunk_range/4`,
   conditional `read_chunk_range/5` (`if_match:`), `capabilities/1`, `put_layout/2`
 - `ExZarr.Storage.ObjectKeys` for centralized v2/v3 object naming, including
@@ -82,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matrix (zarr-python 2.18.3 / 3.2.1 / 3.3.0 / 3.4.0)
 - Azurite-oriented Azure integration test (tagged `:azure`)
 - Showcase: `examples/range_aware_sharded_nx.exs` (run with `mix run`)
+- `compressor_config:` option for `ExZarr.create/1` (e.g. `[level: 9]`; Blosc
+  also `cname`, `shuffle`, `typesize`), validated per compressor by the new
+  `ExZarr.Codecs.CompressorConfig`. v2 arrays store the settings in `.zarray`
+  in numcodecs form and reuse them after reopening (including arrays created
+  by zarr-python); v3 arrays store them in the codec configuration. The
+  option was documented before but never implemented.
+- `compressor: :gzip` for Zarr v3 arrays.
 
 ### Fixed
 - `sharding_indexed` follows the v1.0 spec geometry (chunk grid = shard shape,
@@ -104,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files in the store
 - Scalar (`shape: {}`) and zero-length dimension support in MetadataV3 / Array
 - Dimension-name over-validation (spec strings/nil; uniqueness not required at metadata)
+- `config :ex_zarr, default_zarr_version` is now applied by `ExZarr.create/1`
+  and `ExZarr.Nx`. Unset, new arrays remain v2; `ExZarr.Version` previously
+  documented (and returned) 3 although nothing used it.
+- `ExZarr.create/1` rejects unknown compressors, invalid compressor settings
+  and Zarr versions other than 2 or 3 with an error tuple. Previously an
+  unknown compressor failed on the first write and an invalid version raised.
+- Zarr v3 arrays created with a compressor that has no v3 codec (`:snappy`,
+  custom codecs without `codecs:`) were silently stored uncompressed; they now
+  return `{:error, {:unsupported_codec_for_v3, compressor}}`.
+- `:zlib` honours a compression `level`.
+- v2 `.zarray` compressor levels now record the level ExZarr actually uses
+  (zlib 6, zstd 3) instead of a fixed 5.
 
 ### Changed
 - `create/1` with `shard_shape:` writes spec metadata: `shard_shape` is the
@@ -116,8 +81,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in backend state
 - `Storage.chunk_info/2` returns `{:error, :unsupported}` for backends without
   `chunk_info/2` instead of downloading the object
-- Optional HTTP client is now `req ~> 0.6.1` (with `override: true` until
-  `azure_sdk` widens its `req ~> 0.5` constraint); `ex_aws` updated to 2.7.x
+- Optional HTTP client is now `req ~> 0.6.1` (`azure_sdk`'s `req ~> 0.5` already
+  allows 0.6); `ex_aws` updated to 2.7.x
+- Compression codecs (zstd, lz4, snappy, blosc, bzip2, crc32c) now come from
+  [ExCodecs](https://hex.pm/packages/ex_codecs) `~> 0.2.4`: pure-Rust NIFs
+  with precompiled binaries for macOS, Linux (glibc and musl) and Windows.
+  ExZarr no longer contains native code; Zig, zigler, zigler_precompiled and
+  system compression libraries are no longer needed.
+- `:lz4` writes the numcodecs `LZ4` format (4-byte little-endian size prefix)
+  and `:bzip2` writes plain bzip2 streams (numcodecs `BZ2`), so zarr-python can
+  read them. Data written by earlier ExZarr versions (8-byte size prefix) is
+  still read.
+- v2 `.zarray` compressor metadata uses numcodecs configurations: `lz4`
+  (`acceleration`), `blosc` (`cname`, `clevel`, `shuffle`, `blocksize`) and
+  `bz2` (previously `bzip2`). The old `bzip2` id is still read. zarr-python can
+  now open ExZarr v2 arrays compressed with lz4, blosc and bzip2.
+- The v3 `blosc` codec honours `cname`, `clevel`, `shuffle` and `typesize` from
+  its configuration; without them ExZarr keeps BloscLZ, byte shuffle,
+  typesize 1.
+- Decompressed chunks are capped at 256 MiB (`config :ex_zarr,
+  max_chunk_bytes: ...`) to guard against decompression bombs.
+- Minimum OTP is 26 (ExCodecs NIFs target NIF 2.17).
+- `ExZarr.Codecs.compress/3` accepts options as a map as well as a keyword list.
 
 ### Security
 - Bump `req` past CVE-2026-49755 (decompression-bomb DoS); GCS binary object
@@ -127,6 +112,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `azurex` dependency and Azurex-based adapter code
 - Unused optional `google_api_storage` (GCS uses Goth + Req directly; this also
   unblocked `mime` 2.x required by patched Req)
+- `ExZarr.Codecs.ZigCodecs`, `ExZarr.Codecs.CompressionConfig`, the
+  `fix_nif_rpaths` Mix task, the precompile workflow and
+  `docs/PRECOMPILATION.md` / `docs/COMPRESSION_SETUP.md`.
+- `COMPRESSION_LIB_DIRS`, `HOMEBREW_PREFIX`, `BZIP2_STATIC_LIB`, `ZIG_PATH` and
+  `EX_ZARR_BUILD` no longer have any effect.
 
 ### Known limitations
 - Storage transformers are not executed (metadata only)

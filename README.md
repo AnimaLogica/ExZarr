@@ -872,9 +872,10 @@ Key modules:
 
 See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
-**v1.2.0 (released 2026-10-03)** - Zarr 3.1 interoperability & range-aware cloud I/O:
+**v1.2.0 (released 2026-10-04)** - Zarr 3.1 interoperability & range-aware cloud I/O:
 spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
-AzureSDK migration, Python fixture/CI matrix.
+AzureSDK migration, codecs via ExCodecs (no native toolchain), `compressor_config`,
+Python fixture/CI matrix.
 
 **Upcoming** (high level):
 

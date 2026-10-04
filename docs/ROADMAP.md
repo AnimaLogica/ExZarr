@@ -2,7 +2,7 @@
 
 ## v1.2.0 — Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 
-Released 2026-10-03. Backward compatible with v1.1 (rewrite pre-1.2 private shards).
+Released 2026-10-04. Backward compatible with v1.1 (rewrite pre-1.2 private shards; OTP 26+).
 
 - [x] Zarr 3.1 metadata: scalars, zero-length dims, dimension names, extensions, `storage_transformers`
 - [x] Spec-correct `sharding_indexed` v1.0
@@ -10,6 +10,8 @@ Released 2026-10-03. Backward compatible with v1.1 (rewrite pre-1.2 private shar
 - [x] Range-aware sharded reads with full-shard fallback
 - [x] Version-aware cloud object keys (S3 / GCS / Azure)
 - [x] Azure Blob backend on `azure_sdk ~> 0.4.1` (azurex removed)
+- [x] Codecs via ExCodecs (precompiled pure-Rust NIFs; no Zig or system libraries)
+- [x] `compressor_config:` and `default_zarr_version` applied
 - [x] Python fixture generator + CI matrix job for zarr 2.x / 3.2 / 3.3 / 3.4
 
 ---

@@ -2,7 +2,9 @@
 
 We're pleased to announce **ExZarr v1.2.0**: Zarr 3.1 conformance, standard
 `sharding_indexed` interoperability with zarr-python, optional byte-range cloud
-I/O, AzureSDK migration, and **precompiled Zig codec NIFs** for Hex/Livebook.
+I/O, AzureSDK migration, and compression codecs from
+[ExCodecs](https://hex.pm/packages/ex_codecs): precompiled pure-Rust NIFs, so
+ExZarr has no native code and needs no Zig, compiler or system libraries.
 
 ## Highlights
 
@@ -15,16 +17,21 @@ I/O, AzureSDK migration, and **precompiled Zig codec NIFs** for Hex/Livebook.
 
 ### Standard sharding + range reads
 
-- Spec-correct `sharding_indexed` v1.0 (dense uint64 index, empty sentinel)
+- Spec-correct `sharding_indexed` v1.0 (dense uint64 index, empty sentinel),
+  readable and writable by zarr-python
 - Optional `chunk_info` / `read_chunk_range` backend capabilities
 - Range-aware inner-chunk reads with full-shard fallback
 - S3, GCS, Azure, filesystem, and memory backends
 
-### Precompiled Zig codec NIFs
+### Codecs via ExCodecs
 
-- Hex/Livebook installs download platform NIFs (no Zig toolchain required)
-- Source builds via `EX_ZARR_BUILD=1` or when checksums are missing
-- See [docs/PRECOMPILATION.md](../docs/PRECOMPILATION.md)
+- zstd, lz4, snappy, blosc, bzip2 and crc32c from ExCodecs, precompiled for
+  macOS, Linux (glibc and musl) and Windows; zlib/gzip via Erlang `:zlib`
+- numcodecs-compatible byte formats: zarr-python reads ExZarr's lz4, bzip2
+  and blosc data, and ExZarr reads zarr-python's
+- New `compressor_config:` option (e.g. `[level: 9]`, or Blosc `cname`,
+  `shuffle`, `typesize`), stored in `.zarray` / `zarr.json`
+- `config :ex_zarr, default_zarr_version: 3` now applies to new arrays
 
 ### AzureSDK migration
 
@@ -58,10 +65,16 @@ end
 
 ## Upgrade notes
 
+- OTP 26 or later is required
+- Drop any Zig / system compression-library setup; it is no longer used
 - Azure users: add `azure_sdk`, remove `azurex`
 - Rewrite arrays written with ExZarr’s pre-1.2 private shard index
 - Cloud v3 arrays use `zarr.json` and `c/...` keys
 - GCS/Azure HTTP client: `{:req, "~> 0.6.1"}` (CVE-2026-49755)
+- New lz4/bzip2 data uses the numcodecs formats; 1.2 reads 1.1 data, but 1.1
+  cannot read lz4/bzip2 data written by 1.2
+- `ExZarr.create/1` returns errors for unknown compressors, invalid
+  `compressor_config` and unsupported Zarr versions
 
 ## Known limitations
 
@@ -79,4 +92,4 @@ end
 
 ## Full changelog
 
-See [CHANGELOG.md](../CHANGELOG.md#120---2026-10-03).
+See [CHANGELOG.md](../CHANGELOG.md#120---2026-10-04).
