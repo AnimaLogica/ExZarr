@@ -84,8 +84,11 @@ jobs:
           MIX_ENV: test
         run: mix compile --warnings-as-errors
 
+      # Functional suite. Wall-clock and memory benchmarks (:performance,
+      # :memory) are noisy on shared runners when tests run in parallel; CI
+      # runs them serially (mix test --trace) on every push to main.
       - name: Run tests
-        run: mix test
+        run: mix test --exclude performance --exclude memory
 
       - name: Build docs
         run: mix docs --warnings-as-errors
