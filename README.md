@@ -25,7 +25,7 @@ interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
 - **Pipeline integrations** - Optional Flow, GenStage, and Broadway support for production pipelines
 - **Parallel chunk processing** - Automatic parallel I/O and decompression for large operations
 - **Chunking** along arbitrary dimensions for optimized I/O operations
-- **Compression** - Erlang `:zlib` plus Zig NIF codecs (zstd, lz4, snappy, blosc, bzip2, crc32c)
+- **Compression** - Erlang `:zlib` plus [ExCodecs](https://hex.pm/packages/ex_codecs) codecs (zstd, lz4, snappy, blosc, bzip2, crc32c), precompiled for macOS, Linux and Windows
 - **Flexible storage** backends (in-memory, filesystem, and zip archive)
 - **Custom storage backends** with plugin architecture for S3, databases, and more
 - **Hierarchical groups** for organizing multiple arrays
@@ -322,14 +322,17 @@ ExZarr provides the following built-in compression options:
 
 - **`:none`** - No compression (fastest, largest size)
 - **`:zlib`** - Standard zlib compression (good balance of speed and compression)
-- **`:crc32`c** - CRC32C checksum codec (RFC 3720 compatible with Python zarr)
-- **`:zstd`** - Zstandard compression (Zig NIF implementation)
-- **`:lz4`** - LZ4 compression (Zig NIF implementation)
-- **`:snappy`** - Snappy compression (Zig NIF implementation)
-- **`:blosc`** - Blosc meta-compressor (Zig NIF implementation)
-- **`:bzip2`** - Bzip2 compression (Zig NIF implementation)
+- **`:crc32c`** - CRC32C checksum codec (Zarr v3 `crc32c`)
+- **`:zstd`** - Zstandard compression
+- **`:lz4`** - LZ4 compression (numcodecs `LZ4` format)
+- **`:snappy`** - Snappy compression
+- **`:blosc`** - Blosc meta-compressor (Blosc1 chunks, readable by numcodecs / zarr-python)
+- **`:bzip2`** - Bzip2 compression (numcodecs `BZ2` format)
 
-The `:zlib` codec uses Erlang's built-in `:zlib` module for maximum reliability and compatibility.
+`:zlib` uses Erlang's built-in `:zlib` module. The other codecs come from
+[ExCodecs](https://hex.pm/packages/ex_codecs), pure-Rust NIFs that are
+downloaded precompiled for macOS, Linux (glibc and musl) and Windows, so no
+system libraries or compilers are needed.
 
 ### Custom Codecs
 
@@ -655,9 +658,8 @@ assert_received {:mock_storage, :write_chunk, _}
 ExZarr uses:
 
 - **Erlang :zlib** for zlib/gzip compression
-- **Zig NIFs** (`ExZarr.Codecs.ZigCodecs`) for zstd, lz4, snappy, blosc, bzip2, and crc32c —
-  Hex/Livebook installs use **precompiled** artifacts (Zig not required); see
-  [`PRECOMPILATION.md`](docs/PRECOMPILATION.md)
+- **[ExCodecs](https://hex.pm/packages/ex_codecs)** for zstd, lz4, snappy, blosc, bzip2 and
+  crc32c (precompiled pure-Rust NIFs; ExZarr itself has no native code)
 - **GenServer** for array state management
 - **Lazy streams** (`Stream.resource/3`, `Task.async_stream/3`) for bounded-memory chunk I/O
 - **Optional pipeline modules** (`ExZarr.Flow`, `ExZarr.GenStage`, `ExZarr.Broadway`) for backpressure and fault tolerance
@@ -669,23 +671,14 @@ ExZarr uses:
 
 ## Development
 
-Requires **Elixir ~> 1.17** and **OTP 25+**. Codec NIFs are **precompiled** for
-published Hex releases (no Zig needed). Local/source builds need **Zig 0.16.0**
-(via zigler) and system compression libraries:
-
-```bash
-# macOS
-brew install zstd lz4 snappy c-blosc bzip2
-
-# Ubuntu/Debian
-sudo apt-get install libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-```
+Requires **Elixir ~> 1.17** and **OTP 26+**. No native toolchain or system
+libraries are needed; the codec NIFs come precompiled with ExCodecs.
 
 ```bash
 # Install dependencies
 mix deps.get
 
-# Compile (dev/test force a Zig source build; or EX_ZARR_BUILD=1)
+# Compile
 mix compile
 
 # Run tests
@@ -731,7 +724,6 @@ mix coveralls
 The project uses GitHub Actions for continuous integration. The CI pipeline:
 
 - Tests on Elixir 1.17–1.19, 1.20-rc, and OTP 26–28 (Ubuntu)
-- Installs Zig 0.16.0 for codec NIF builds
 - Runs all test suites (unit, integration, property-based)
 - Performs code quality checks (Credo, Dialyzer, `mix format`)
 - Generates test coverage reports and documentation (`mix docs --warnings-as-errors`)
@@ -882,7 +874,7 @@ See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
 **v1.2.0 (released 2026-10-03)** - Zarr 3.1 interoperability & range-aware cloud I/O:
 spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
-AzureSDK migration, precompiled Zig NIFs, Python fixture/CI matrix.
+AzureSDK migration, Python fixture/CI matrix.
 
 **Upcoming** (high level):
 

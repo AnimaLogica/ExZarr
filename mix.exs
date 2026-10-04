@@ -36,7 +36,6 @@ defmodule ExZarr.MixProject do
 
   defp aliases do
     [
-      compile: ["compile", "fix_nif_rpaths"],
       verify: &verify/1
     ]
   end
@@ -66,11 +65,9 @@ defmodule ExZarr.MixProject do
       # JSON encoding/decoding for metadata
       {:jason, "~> 1.4"},
 
-      # Zig NIFs: zigler required until precompiled checksums ship (Mix.install /
-      # path deps do not pull optional deps). After checksum-*.exs is published,
-      # zigler can become optional: true again for Hex-only consumers.
-      {:zigler_precompiled, "~> 0.1.6"},
-      {:zigler, "~> 0.16", runtime: false},
+      # Compression codecs (zstd, lz4, snappy, bzip2, blosc, crc32c): pure-Rust
+      # NIFs with precompiled binaries, so no system libraries or toolchains.
+      {:ex_codecs, "~> 0.2.4"},
 
       # Cloud storage backends (optional)
       {:ex_aws, "~> 2.5", optional: true},
@@ -94,9 +91,7 @@ defmodule ExZarr.MixProject do
       {:flow, "~> 1.2", optional: true},
       {:gen_stage, "~> 1.2", optional: true},
       {:broadway, "~> 1.0", optional: true},
-
-      # Documentation — no :only: zig_doc (zigler transitive dep) requires ex_doc in prod
-      {:ex_doc, "~> 0.39", runtime: false},
+      {:ex_doc, "~> 0.39", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4.5", only: [:dev, :test], runtime: false},
       {:doctor, "~> 0.23.0", only: :dev, runtime: false},
@@ -127,13 +122,8 @@ defmodule ExZarr.MixProject do
         "Zarr Specification" => "https://zarr.dev"
       },
       maintainers: ["Thanos Vassilakis"],
-      # Zigler regenerates this ignored intermediate during source builds.
-      exclude_patterns: ["lib/ex_zarr/codecs/.Elixir.ExZarr.Codecs.ZigCodecs.zig"],
       files: [
         "lib",
-        "native",
-        "checksum-*.exs",
-        "docs/PRECOMPILATION.md",
         ".formatter.exs",
         "mix.exs",
         "README.md",
@@ -212,7 +202,6 @@ defmodule ExZarr.MixProject do
         "docs/V2_TO_V3_MIGRATION.md",
         "docs/migration_guide_v1_1_0.md",
         "benchmarks/README.md",
-        "docs/PRECOMPILATION.md",
         "LICENSE",
 
         # Reference
@@ -284,7 +273,6 @@ defmodule ExZarr.MixProject do
           "docs/PERFORMANCE_IMPROVEMENTS.md",
           "docs/V2_TO_V3_MIGRATION.md",
           "benchmarks/README.md",
-          "docs/PRECOMPILATION.md",
           "LICENSE"
         ],
         "Release Notes & Migration Guides": [

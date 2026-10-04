@@ -1,6 +1,6 @@
 # Overview and Philosophy
 
-ExZarr is a pure Elixir implementation of the Zarr storage specification for compressed, chunked, N-dimensional arrays. This guide explains what ExZarr is, why it exists, and how its architecture leverages BEAM concurrency and Zig acceleration to provide high-performance array storage for scientific computing and machine learning workloads.
+ExZarr is a pure Elixir implementation of the Zarr storage specification for compressed, chunked, N-dimensional arrays. This guide explains what ExZarr is, why it exists, and how its architecture leverages BEAM concurrency and precompiled native codecs to provide high-performance array storage for scientific computing and machine learning workloads.
 
 ## What is ExZarr
 
@@ -81,16 +81,12 @@ Parallel S3 reads (10 concurrent):
 
 The BEAM's process model makes this parallelism natural to express and safe to execute.
 
-## Zig Acceleration Explained
+## Native Codecs
 
-ExZarr uses Zig for performance-critical compression codecs while keeping coordination logic in Elixir.
-
-### Why Zig Over Alternatives
-
-- **Simpler C interop**: Zig can directly import C libraries (`@cImport`) without bindings
-- **Zigler integration**: The Zigler library provides seamless Zig NIF compilation in Mix
-- **Smaller footprint**: Zig produces compact binaries compared to alternative approaches
-- **No runtime dependency**: Unlike Rustler (which requires Rust toolchain at compile time), Zig is more lightweight
+ExZarr itself is pure Elixir. Compression runs in native code supplied by
+[ExCodecs](https://hex.pm/packages/ex_codecs), a separate package of
+pure-Rust NIFs that ships precompiled binaries, so installing ExZarr needs no
+compiler, Zig or Rust toolchain, or system compression libraries.
 
 ### What Runs Where
 
@@ -100,52 +96,32 @@ ExZarr uses Zig for performance-critical compression codecs while keeping coordi
 - Storage I/O coordination (backend selection, error handling)
 - Concurrent task scheduling (Task.async_stream orchestration)
 - Array lifecycle management (GenServer state)
+- zlib and gzip, through Erlang's built-in `:zlib`
 
-**Zig NIFs handle:**
-- Compression: zstd, lz4, snappy, blosc, bzip2
-- Decompression: reverse operations
-- CRC32C checksum calculation
-- Direct calls to C libraries (libzstd, liblz4, etc.)
+**ExCodecs NIFs handle:**
+- zstd, lz4, snappy, blosc (Blosc1 chunks) and bzip2
+- CRC32C checksums
 
-This division keeps the hot path (compression/decompression) in native code while maintaining high-level logic in readable Elixir.
+This keeps the hot path (compression and decompression) in native code while
+the rest stays in readable Elixir.
 
-### Fallback Behavior
+### Availability
 
-ExZarr gracefully degrades when Zig NIFs are unavailable:
-
-```elixir
-# Zig codecs fail to compile (missing system libraries)
-# ExZarr falls back to Erlang's built-in :zlib
-
-{:ok, array} = ExZarr.create(
-  shape: {1000, 1000},
-  chunks: {100, 100},
-  dtype: :float64,
-  compressor: :zstd  # Attempts Zig NIF first
-)
-
-# If zstd NIF unavailable, uses :zlib automatically
-# Or specify fallback explicitly:
-{:ok, array} = ExZarr.create(
-  shape: {1000, 1000},
-  chunks: {100, 100},
-  dtype: :float64,
-  compressor: :zlib  # Always available (Erlang built-in)
-)
-```
-
-The Erlang `:zlib` module is always available and provides reliable compression without any native dependencies. This ensures ExZarr works even in environments where Zig compilation is not possible.
+ExCodecs publishes binaries for macOS (Apple Silicon and Intel), Linux
+(x86_64 and aarch64, glibc and musl) and Windows (x86_64). If its NIF cannot
+load, ExZarr does not silently switch codecs: `ExZarr.Codecs.available_codecs/0`
+lists only `:none` and `:zlib`, and compressing with another codec returns
+`{:error, {:unsupported_codec, codec}}` or a compression error. `:zlib` and
+`:gzip` always work.
 
 ### NIF Safety
 
-Native code in the BEAM requires care to avoid crashing the VM. ExZarr's Zig NIFs follow safety practices:
+Native code in the BEAM must not crash or stall the VM. The ExCodecs NIFs:
 
-- **Memory management**: Uses BEAM allocator for all allocations
-- **Error handling**: Returns `{:error, reason}` tuples rather than crashing
-- **Bounded execution**: Compression operations are bounded by chunk size
-- **No blocking**: NIFs release scheduler during long operations where possible
-
-The Zigler library handles much of this complexity automatically, generating safe NIF wrappers from Zig code.
+- run on dirty CPU schedulers, so large chunks do not block normal schedulers
+- return `{:error, reason}` tuples instead of crashing
+- cap decompressed output (`config :ex_zarr, max_chunk_bytes: ...`, default
+  256 MiB) to guard against decompression bombs
 
 ## Zarr in the Elixir Stack
 
@@ -333,7 +309,7 @@ ExZarr brings Zarr array storage to the BEAM with:
 
 - **Pure Elixir implementation**: No Python dependencies, native BEAM integration
 - **BEAM concurrency**: True parallelism for multi-chunk operations without GIL constraints
-- **Zig acceleration**: High-performance codecs via NIFs, graceful fallback to Erlang zlib
+- **Native codecs**: zstd, lz4, snappy, blosc and bzip2 via precompiled ExCodecs NIFs; zlib and gzip via Erlang
 - **Ecosystem integration**: Complements Nx, integrates with Broadway/GenStage, cloud-native design
 - **Specification compliance**: Full Zarr v2 and v3 support with automatic format detection
 

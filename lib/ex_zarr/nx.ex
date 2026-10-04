@@ -175,7 +175,8 @@ defmodule ExZarr.Nx do
   - `:path` - Path for filesystem storage
   - `:compressor` - Compression codec (default: `:zlib`)
   - `:fill_value` - Fill value for uninitialized chunks (default: 0)
-  - `:zarr_version` - Zarr format version, 2 or 3 (default: 2)
+  - `:zarr_version` - Zarr format version, 2 or 3 (default:
+    `config :ex_zarr, default_zarr_version`, or 2)
 
   ## Returns
 
@@ -219,7 +220,7 @@ defmodule ExZarr.Nx do
           storage: Keyword.get(opts, :storage, :memory),
           compressor: Keyword.get(opts, :compressor, :zlib),
           fill_value: Keyword.get(opts, :fill_value, 0),
-          zarr_version: Keyword.get(opts, :zarr_version, 2)
+          zarr_version: Keyword.get_lazy(opts, :zarr_version, &ExZarr.Version.default_version/0)
         ]
         |> maybe_put_path(opts)
 

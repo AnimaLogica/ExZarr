@@ -342,7 +342,6 @@ defmodule ExZarr.Codecs.Registry do
                    :builtin_blosc,
                    :builtin_bzip2
                  ] ->
-            # These will be checked through the old system until phase 2
             check_builtin_available(atom)
 
           _module ->
@@ -396,25 +395,18 @@ defmodule ExZarr.Codecs.Registry do
 
   ## Private Helpers
 
-  # Temporary helper for checking built-in codec availability (Phase 1)
-  defp check_builtin_available(:builtin_zstd) do
-    function_exported?(ExZarr.Codecs.ZigCodecs, :zstd_compress, 2)
-  end
+  # Built-in codecs other than :none and :zlib come from ExCodecs; they are
+  # unavailable only if its NIF failed to load.
+  @ex_codecs_names %{
+    builtin_zstd: :zstd,
+    builtin_lz4: :lz4,
+    builtin_snappy: :snappy,
+    builtin_blosc: :blosc,
+    builtin_bzip2: :bzip2
+  }
 
-  defp check_builtin_available(:builtin_lz4) do
-    function_exported?(ExZarr.Codecs.ZigCodecs, :lz4_compress, 1)
-  end
-
-  defp check_builtin_available(:builtin_snappy) do
-    function_exported?(ExZarr.Codecs.ZigCodecs, :snappy_compress, 1)
-  end
-
-  defp check_builtin_available(:builtin_blosc) do
-    function_exported?(ExZarr.Codecs.ZigCodecs, :blosc_compress, 2)
-  end
-
-  defp check_builtin_available(:builtin_bzip2) do
-    function_exported?(ExZarr.Codecs.ZigCodecs, :bzip2_compress, 2)
+  defp check_builtin_available(builtin) when is_map_key(@ex_codecs_names, builtin) do
+    Map.fetch!(@ex_codecs_names, builtin) in ExCodecs.available_codecs()
   end
 
   # Temporary helper for built-in codec info (Phase 1)
@@ -450,7 +442,7 @@ defmodule ExZarr.Codecs.Registry do
       name: "Zstandard",
       version: "1.0.0",
       type: :compression,
-      description: "Zstandard compression via Zig NIF"
+      description: "Zstandard compression via ExCodecs (pure-Rust NIF)"
     }
   end
 
@@ -459,7 +451,7 @@ defmodule ExZarr.Codecs.Registry do
       name: "LZ4",
       version: "1.0.0",
       type: :compression,
-      description: "LZ4 compression via Zig NIF"
+      description: "LZ4 compression via ExCodecs (pure-Rust NIF)"
     }
   end
 
@@ -468,7 +460,7 @@ defmodule ExZarr.Codecs.Registry do
       name: "Snappy",
       version: "1.0.0",
       type: :compression,
-      description: "Snappy compression via Zig NIF"
+      description: "Snappy compression via ExCodecs (pure-Rust NIF)"
     }
   end
 
@@ -477,7 +469,7 @@ defmodule ExZarr.Codecs.Registry do
       name: "Blosc",
       version: "1.0.0",
       type: :compression,
-      description: "Blosc meta-compressor via Zig NIF"
+      description: "Blosc meta-compressor (Blosc1 chunks) via ExCodecs"
     }
   end
 
@@ -486,7 +478,7 @@ defmodule ExZarr.Codecs.Registry do
       name: "Bzip2",
       version: "1.0.0",
       type: :compression,
-      description: "Bzip2 compression via Zig NIF"
+      description: "Bzip2 compression via ExCodecs (pure-Rust NIF)"
     }
   end
 end

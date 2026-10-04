@@ -929,7 +929,12 @@ defmodule ExZarr.MetadataV3 do
   @spec from_v2(ExZarr.Metadata.t()) :: {:ok, t()}
   def from_v2(%ExZarr.Metadata{} = v2_metadata) do
     # Convert filters and compressor to v3 codec pipeline
-    codecs = PipelineV3.from_v2(v2_metadata.filters || [], v2_metadata.compressor)
+    codecs =
+      PipelineV3.from_v2(
+        v2_metadata.filters || [],
+        v2_metadata.compressor,
+        Map.get(v2_metadata, :compressor_config) || []
+      )
 
     metadata = %__MODULE__{
       zarr_format: 3,
@@ -1228,7 +1233,7 @@ defmodule ExZarr.MetadataV3 do
           # Convert v2 style to v3 codecs
           filters = Map.get(config, :filters, [])
           compressor = Map.get(config, :compressor, :zstd)
-          PipelineV3.from_v2(filters, compressor)
+          PipelineV3.from_v2(filters, compressor, Map.get(config, :compressor_config, []))
 
         codecs ->
           # Use provided v3 codecs

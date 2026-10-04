@@ -14,6 +14,8 @@ defmodule ExZarr.Metadata do
   - **chunks**: The size of each chunk
   - **dtype**: The data type of elements
   - **compressor**: The compression codec used
+  - **compressor_config**: Compressor settings, e.g. `[level: 9]` (see
+    `ExZarr.Codecs.CompressorConfig`)
   - **fill_value**: Default value for uninitialized elements
   - **order**: Memory layout order ("C" for row-major)
   - **zarr_format**: Version of the Zarr specification (2)
@@ -48,6 +50,7 @@ defmodule ExZarr.Metadata do
           chunks: tuple(),
           dtype: ExZarr.dtype(),
           compressor: ExZarr.compressor(),
+          compressor_config: keyword(),
           fill_value: number(),
           order: String.t(),
           zarr_format: integer(),
@@ -59,6 +62,7 @@ defmodule ExZarr.Metadata do
     :chunks,
     :dtype,
     :compressor,
+    compressor_config: [],
     fill_value: 0,
     order: "C",
     zarr_format: 2,
@@ -107,6 +111,7 @@ defmodule ExZarr.Metadata do
       chunks: config.chunks,
       dtype: config.dtype,
       compressor: config.compressor,
+      compressor_config: Map.get(config, :compressor_config, []),
       fill_value: config.fill_value,
       order: Map.get(config, :order, "C"),
       zarr_format: 2,

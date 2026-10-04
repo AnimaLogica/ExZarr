@@ -50,6 +50,7 @@ defmodule ExZarr.Storage do
       {:ok, metadata} = ExZarr.Storage.read_metadata(storage)
   """
 
+  alias ExZarr.Codecs.CompressorConfig
   alias ExZarr.Storage.Backend
 
   @type backend :: :memory | :filesystem | :zip | :http | :s3
@@ -438,11 +439,14 @@ defmodule ExZarr.Storage do
 
   # Parse v2 metadata
   defp parse_metadata_v2(metadata) do
+    {compressor, compressor_config} = CompressorConfig.from_numcodecs(metadata.compressor)
+
     parsed_metadata = %ExZarr.Metadata{
       shape: List.to_tuple(metadata.shape),
       chunks: List.to_tuple(metadata.chunks),
       dtype: string_to_dtype(metadata.dtype),
-      compressor: parse_compressor(metadata.compressor),
+      compressor: compressor,
+      compressor_config: compressor_config,
       fill_value: metadata.fill_value,
       order: Map.get(metadata, :order, "C"),
       zarr_format: metadata.zarr_format,
@@ -558,7 +562,8 @@ defmodule ExZarr.Storage do
       shape: Tuple.to_list(metadata.shape),
       chunks: Tuple.to_list(metadata.chunks),
       dtype: dtype_to_string(metadata.dtype),
-      compressor: compressor_to_json(metadata.compressor),
+      compressor:
+        CompressorConfig.to_numcodecs(metadata.compressor, metadata.compressor_config || []),
       fill_value: metadata.fill_value,
       order: metadata.order,
       filters: encode_filters(metadata.filters)
@@ -644,19 +649,6 @@ defmodule ExZarr.Storage do
   end
 
   ## Private Functions
-
-  defp parse_compressor(nil), do: :none
-  defp parse_compressor(%{id: id}), do: String.to_atom(id)
-  defp parse_compressor(_), do: :none
-
-  defp compressor_to_json(:none), do: nil
-
-  defp compressor_to_json(compressor) when is_atom(compressor) do
-    %{
-      id: Atom.to_string(compressor),
-      level: 5
-    }
-  end
 
   # Little-endian (< prefix)
   defp string_to_dtype("<i1"), do: :int8

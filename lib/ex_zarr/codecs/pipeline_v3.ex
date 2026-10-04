@@ -44,6 +44,7 @@ defmodule ExZarr.Codecs.PipelineV3 do
   """
 
   alias ExZarr.Codecs
+  alias ExZarr.Codecs.CompressorConfig
 
   @type codec_spec :: %{required(:name) => String.t(), optional(:configuration) => map()}
   @type codec_stage :: :array_to_array | :array_to_bytes | :bytes_to_bytes
@@ -601,13 +602,13 @@ defmodule ExZarr.Codecs.PipelineV3 do
         Codecs.compress(data, :zstd, level: level)
 
       "blosc" ->
-        Codecs.compress(data, :blosc)
+        Codecs.compress(data, :blosc, blosc_options(config))
 
       "lz4" ->
         Codecs.compress(data, :lz4)
 
       "bz2" ->
-        Codecs.compress(data, :bzip2)
+        Codecs.compress(data, :bzip2, config_options(config, [:level]))
 
       "crc32c" ->
         Codecs.compress(data, :crc32c)
@@ -615,6 +616,42 @@ defmodule ExZarr.Codecs.PipelineV3 do
       _ ->
         {:error, {:unsupported_compression_codec, name}}
     end
+  end
+
+  # Zarr v3 blosc configuration -> ExZarr.Codecs options. Missing keys keep
+  # the codec defaults.
+  defp blosc_options(config) do
+    config
+    |> config_options([:cname, :clevel, :shuffle, :typesize])
+    |> Enum.flat_map(fn
+      {:cname, cname} when cname in ~w(blosclz lz4 lz4hc zlib zstd) ->
+        [cname: String.to_existing_atom(cname)]
+
+      {:clevel, level} when is_integer(level) ->
+        [level: level]
+
+      {:shuffle, shuffle} ->
+        case shuffle do
+          "noshuffle" -> [shuffle: :none]
+          "shuffle" -> [shuffle: :byte]
+          "bitshuffle" -> [shuffle: :bit]
+          _ -> []
+        end
+
+      {:typesize, typesize} when is_integer(typesize) ->
+        [typesize: typesize]
+
+      _ ->
+        []
+    end)
+  end
+
+  # Reads atom- or string-keyed configuration values.
+  defp config_options(config, keys) do
+    for key <- keys,
+        value = Map.get(config, key, Map.get(config, Atom.to_string(key))),
+        value != nil,
+        do: {key, value}
   end
 
   @doc false
@@ -651,6 +688,8 @@ defmodule ExZarr.Codecs.PipelineV3 do
 
     * `filters` - List of v2 filter tuples `{:filter_id, opts}`
     * `compressor` - v2 compressor atom (`:zlib`, `:zstd`, etc.)
+    * `compressor_config` - normalised compressor settings (see
+      `ExZarr.Codecs.CompressorConfig`), placed in the codec's configuration
 
   ## Returns
 
@@ -663,8 +702,8 @@ defmodule ExZarr.Codecs.PipelineV3 do
       iex> length(codecs)
       4
   """
-  @spec from_v2(list() | nil, atom()) :: [codec_spec()]
-  def from_v2(filters, compressor) do
+  @spec from_v2(list() | nil, atom(), keyword()) :: [codec_spec()]
+  def from_v2(filters, compressor, compressor_config \\ []) do
     # Convert filters to v3 array→array codecs
     filter_codecs =
       case filters do
@@ -683,17 +722,11 @@ defmodule ExZarr.Codecs.PipelineV3 do
     # Required bytes codec
     bytes_codec = %{name: "bytes", configuration: %{}}
 
-    # Convert compressor to v3 bytes→bytes codec
+    # Convert compressor (and its compressor_config) to a v3 bytes→bytes codec
     compressor_codec =
-      case compressor do
-        :none -> []
-        :zlib -> [%{name: "gzip", configuration: %{level: 5}}]
-        :zstd -> [%{name: "zstd", configuration: %{level: 5}}]
-        :lz4 -> [%{name: "lz4", configuration: %{}}]
-        :blosc -> [%{name: "blosc", configuration: %{}}]
-        :bzip2 -> [%{name: "bz2", configuration: %{}}]
-        :crc32c -> [%{name: "crc32c", configuration: %{}}]
-        _ -> []
+      case CompressorConfig.to_v3(compressor, compressor_config) do
+        nil -> []
+        codec -> [codec]
       end
 
     filter_codecs ++ [bytes_codec] ++ compressor_codec
