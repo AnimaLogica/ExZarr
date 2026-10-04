@@ -7,10 +7,6 @@
   {"lib/ex_zarr/telemetry.ex", :contract_supertype},
 
   # Pattern match and coverage warnings - false positives from conditional compilation
-  {"lib/ex_zarr/codecs.ex", :pattern_match},
-  {"lib/ex_zarr/codecs.ex", :pattern_match_cov},
-  {"lib/ex_zarr/codecs/compression_config.ex", :pattern_match_cov},
-  {"lib/ex_zarr/codecs/registry.ex", :pattern_match_cov},
   {"lib/ex_zarr/storage/backend/mongo_gridfs.ex", :pattern_match},
 
   # Callback arg type mismatches - behavior signatures are intentionally flexible

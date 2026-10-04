@@ -121,7 +121,7 @@ NumPy's in-memory N-dimensional array type. ExZarr arrays are persistent, chunke
 
 ### numcodecs
 
-Python package providing compression codecs for zarr-python. Includes Blosc, Zstd, LZ4, etc. ExZarr uses Zig NIFs for equivalent codec implementations.
+Python package providing compression codecs for zarr-python. Includes Blosc, Zstd, LZ4, etc. ExZarr uses ExCodecs (precompiled pure-Rust NIFs) for equivalent codec implementations.
 
 ### Slicing
 
@@ -165,7 +165,7 @@ Elixir's `[key: value]` syntax for function options. Used throughout ExZarr API.
 
 ### NIF (Native Implemented Function)
 
-Erlang mechanism for calling native code (C, Zig, Rust) from BEAM. ExZarr uses Zig NIFs for high-performance compression codecs. NIFs run in the same OS process as BEAM (fast but can crash VM if buggy).
+Erlang mechanism for calling native code (C, Zig, Rust) from BEAM. ExZarr's compression codecs run as NIFs from the ExCodecs package. NIFs run in the same OS process as BEAM (fast but can crash VM if buggy).
 
 ### Process
 
@@ -187,9 +187,9 @@ Elixir pattern for parallel map operations with controlled concurrency. ExZarr u
 
 Elixir's immutable ordered collection with fixed size. ExZarr uses tuples for shapes (`{1000, 500}`), chunk coordinates (`{0, 2}`), and nested data representation. Access by index is O(1).
 
-### Zigler
+### ExCodecs
 
-Elixir package for writing Zig NIFs. Handles compilation, type conversion, and resource management. ExZarr uses Zigler for codec implementations. Automatically downloads Zig toolchain on first compile.
+Elixir package of compression and checksum codecs implemented as pure-Rust NIFs with precompiled binaries. ExZarr uses it for zstd, lz4, snappy, blosc, bzip2 and crc32c.
 
 ## Storage and I/O Terms
 
@@ -350,12 +350,12 @@ Note: `<` indicates little-endian byte order (standard on most modern systems). 
 |-------|-------------------|---------------|--------------|
 | Zlib | `numcodecs.Zlib` | `:zlib` | Always (Erlang built-in) |
 | Gzip | `numcodecs.GZip` | `:gzip` | Always (Erlang built-in) |
-| Zstd | `numcodecs.Zstd` | `:zstd` | Requires Zig NIFs + libzstd |
-| LZ4 | `numcodecs.LZ4` | `:lz4` | Requires Zig NIFs + liblz4 |
-| Blosc | `numcodecs.Blosc` | `:blosc` | Requires Zig NIFs + libblosc |
-| Snappy | `numcodecs.Snappy` | `:snappy` | Requires Zig NIFs + libsnappy |
-| Bzip2 | `numcodecs.BZ2` | `:bzip2` | Requires Zig NIFs + libbz2 |
-| CRC32C | `numcodecs.CRC32C` | `:crc32c` | Requires Zig NIFs |
+| Zstd | `numcodecs.Zstd` | `:zstd` | Via ExCodecs |
+| LZ4 | `numcodecs.LZ4` | `:lz4` | Via ExCodecs |
+| Blosc | `numcodecs.Blosc` | `:blosc` | Via ExCodecs (Blosc1 chunks) |
+| Snappy | none | `:snappy` | ExZarr-only; no numcodecs equivalent |
+| Bzip2 | `numcodecs.BZ2` | `:bzip2` | Via ExCodecs |
+| CRC32C | `numcodecs.CRC32C` | `:crc32c` | Via ExCodecs |
 | Shuffle | `numcodecs.Shuffle` | `ExZarr.Filters.Shuffle` | Built-in (v3) |
 | Delta | `numcodecs.Delta` | `ExZarr.Filters.Delta` | Built-in (v3) |
 

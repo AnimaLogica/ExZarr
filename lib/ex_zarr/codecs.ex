@@ -6,46 +6,48 @@ defmodule ExZarr.Codecs do
 
   ## Built-in Codecs
 
-  Provides compression and decompression operations for chunk data using
-  the following codecs:
+  - `:none` - No compression
+  - `:zlib` - zlib via Erlang's built-in `:zlib`
+  - `:zstd` - Zstandard frames
+  - `:lz4` - LZ4 block with a 4-byte little-endian size prefix (numcodecs `LZ4`)
+  - `:snappy` - Raw Snappy
+  - `:blosc` - Blosc1 chunks (c-blosc 1.x / numcodecs `Blosc` / Zarr `blosc`)
+  - `:bzip2` - bzip2 stream (numcodecs `BZ2`)
+  - `:crc32c` - Appends / verifies a little-endian CRC32C (Zarr v3 `crc32c`)
 
-  - `:none` - No compression (fastest, but largest storage size)
-  - `:zlib` - Standard zlib compression using Erlang's built-in `:zlib` module
-  - `:zstd` - Zstandard compression using `ezstd` (optional dependency)
-  - `:lz4` - LZ4 compression using `nimble_lz4` (optional dependency)
-  - `:snappy` - Snappy compression using `snappyer` (optional dependency)
-  - `:blosc` - Blosc meta-compressor using Zig NIF (optional)
-  - `:bzip2` - Bzip2 compression using Zig NIF (optional)
-  - `:crc32c` - CRC32C checksum codec (bytes-to-bytes, adds 4-byte checksum)
+  Everything except `:none` and `:zlib` is provided by
+  [ExCodecs](https://hex.pm/packages/ex_codecs): pure-Rust NIFs that ship
+  precompiled for Linux (glibc and musl), macOS and Windows. No system
+  libraries or compilers are needed.
 
   ## Compression Performance
 
-  Different codecs offer different trade-offs between compression speed,
-  decompression speed, and compression ratio:
+  - `:none` - Fastest, largest
+  - `:lz4` / `:snappy` - Very fast, moderate ratio
+  - `:zlib` - Balanced
+  - `:zstd` - High ratio, fast decompression, configurable level
+  - `:blosc` - Shuffle filters plus a compressor; strong on numeric data
+  - `:bzip2` - High ratio, slow
+  - `:crc32c` - Integrity check, not compression (4 bytes overhead)
 
-  - `:none` - Fastest (no CPU overhead), largest files
-  - `:lz4` - Very fast compression and decompression, moderate compression ratio
-  - `:snappy` - Very fast compression, good for real-time data
-  - `:zlib` - Balanced performance and compression ratio (default level 6)
-  - `:zstd` - Best compression ratio, fast decompression, configurable levels
-  - `:blosc` - Meta-compressor with SIMD acceleration, excellent for numerical data
-  - `:bzip2` - High compression ratio, slower speed
-  - `:crc32c` - Checksum codec for data integrity (not compression, adds 4-byte overhead)
+  ## Options
 
-  ## Optional Dependencies
+  `compress/3` accepts a keyword list (or map):
 
-  Some codecs require optional dependencies. To use them, add to your `mix.exs`:
+  - `:level` - compression level (`:zlib` 0-9, `:zstd` 1-22, `:blosc` 0-9,
+    `:bzip2` 1-9)
+  - `:cname`, `:shuffle`, `:typesize` - `:blosc` only; defaults `:blosclz`,
+    `:byte` and `1`
 
-      def deps do
-        [
-          {:ex_zarr, "~> 1.2"},
-          {:ezstd, "~> 1.1"},        # For :zstd
-          {:nimble_lz4, "~> 0.1.3"}, # For :lz4
-          {:snappyer, "~> 1.2"}      # For :snappy
-        ]
-      end
+  Decompressed chunks are capped at 256 MiB as protection against
+  decompression bombs. Raise the cap for larger chunks:
 
-  Check codec availability at runtime with `codec_available?/1`.
+      config :ex_zarr, max_chunk_bytes: 1_073_741_824
+
+  ## Compatibility
+
+  `:lz4` and `:bzip2` data written by ExZarr 1.1 (an 8-byte size prefix) is
+  still read; new data uses the numcodecs formats, so zarr-python can read it.
 
   ## Custom Codecs
 
@@ -92,22 +94,10 @@ defmodule ExZarr.Codecs do
       # data == "hello"
 
       # Check codec availability
-      ExZarr.Codecs.codec_available?(:zlib)   # => true (always)
-      ExZarr.Codecs.codec_available?(:zstd)   # => true if libzstd is installed
-      ExZarr.Codecs.codec_available?(:blosc)  # => true if libblosc is installed
-      ExZarr.Codecs.codec_available?(:crc32c) # => true (always available)
-
-  ## Compatibility Notes
-
-  - All codecs are compatible with zarr-python when using the same compression
-  - `:zlib` is always available (uses Erlang's built-in module)
-  - Other codecs require system libraries and compiled Zig NIFs
-  - If a codec is not available, compression/decompression will return an error
-  - Use `codec_available?/1` to check availability before use
+      ExZarr.Codecs.codec_available?(:zstd) # => true
   """
 
   alias ExZarr.Codecs.Registry
-  alias ExZarr.Codecs.ZigCodecs
 
   # Changed from fixed atoms to allow custom codecs
   @type codec :: atom()
@@ -124,8 +114,10 @@ defmodule ExZarr.Codecs do
 
   - `data` - Binary data to compress
   - `codec` - Compression codec (`:none`, `:zlib`, `:zstd`, `:lz4`, `:snappy`, `:blosc`, `:bzip2`, or `:crc32c`)
-  - `opts` - Optional keyword list with compression options:
+  - `opts` - Optional keyword list (or map) with compression options:
     - `:level` - Compression level (codec-specific, typically 1-9)
+    - `:cname`, `:shuffle`, `:typesize` - `:blosc` only (defaults `:blosclz`,
+      `:byte`, `1`)
 
   ## Examples
 
@@ -153,6 +145,8 @@ defmodule ExZarr.Codecs do
   def compress(data, codec, opts \\ [])
 
   # First try to use custom codec from registry
+  def compress(data, codec, opts) when is_map(opts), do: compress(data, codec, Map.to_list(opts))
+
   def compress(data, codec, opts) when is_binary(data) and is_atom(codec) do
     case Registry.get(codec) do
       {:ok, builtin} when is_atom(builtin) ->
@@ -187,96 +181,68 @@ defmodule ExZarr.Codecs do
     end
   end
 
-  # Built-in codec implementations
+  # Built-in codec implementations. zlib uses Erlang's :zlib; everything else
+  # goes through ExCodecs (pure-Rust NIFs, precompiled).
   defp compress_builtin(data, :none, _opts), do: {:ok, data}
 
-  defp compress_builtin(data, :zlib, _opts) when is_binary(data) do
-    ZigCodecs.zlib_compress(data)
-  rescue
-    e -> {:error, {:compression_failed, e}}
-  end
-
-  defp compress_builtin(data, :zstd, opts) when is_binary(data) do
-    level = Keyword.get(opts, :level, 3)
-
-    case ZigCodecs.zstd_compress(data, level) do
-      {:ok, compressed} -> {:ok, compressed}
-      compressed when is_binary(compressed) -> {:ok, compressed}
-      {:error, reason} -> {:error, {:compression_failed, reason}}
+  defp compress_builtin(data, :zlib, opts) do
+    case Keyword.get(opts, :level) do
+      nil -> {:ok, :zlib.compress(data)}
+      level -> {:ok, zlib_compress(data, level)}
     end
   rescue
     e -> {:error, {:compression_failed, e}}
   end
 
-  defp compress_builtin(data, :lz4, _opts) when is_binary(data) do
-    # LZ4 requires original size for decompression, so we prepend it (8 bytes)
-    original_size = byte_size(data)
+  defp compress_builtin(data, :zstd, opts),
+    do: ex_codecs_encode(:zstd, data, level: Keyword.get(opts, :level, 3))
 
-    case ZigCodecs.lz4_compress(data) do
-      {:ok, compressed} ->
-        {:ok, <<original_size::64-unsigned-native, compressed::binary>>}
+  # numcodecs LZ4 format: 4-byte little-endian size + LZ4 block.
+  defp compress_builtin(data, :lz4, _opts), do: ex_codecs_encode(:lz4, data, [])
 
-      compressed when is_binary(compressed) ->
-        {:ok, <<original_size::64-unsigned-native, compressed::binary>>}
+  defp compress_builtin(data, :snappy, _opts), do: ex_codecs_encode(:snappy, data, [])
 
-      {:error, reason} ->
-        {:error, {:compression_failed, reason}}
-    end
-  rescue
-    e -> {:error, {:compression_failed, e}}
+  # Blosc1 chunk, readable by c-blosc 1.x / numcodecs / zarr-python. Defaults
+  # match ExZarr 1.1 (BloscLZ, byte shuffle, typesize 1).
+  defp compress_builtin(data, :blosc, opts) do
+    ex_codecs_encode(:blosc, data,
+      cname: Keyword.get(opts, :cname, :blosclz),
+      clevel: Keyword.get(opts, :level, 5),
+      shuffle: Keyword.get(opts, :shuffle, :byte),
+      typesize: Keyword.get(opts, :typesize, 1)
+    )
   end
 
-  defp compress_builtin(data, :snappy, _opts) when is_binary(data) do
-    case ZigCodecs.snappy_compress(data) do
-      {:ok, compressed} -> {:ok, compressed}
-      compressed when is_binary(compressed) -> {:ok, compressed}
-      {:error, reason} -> {:error, {:compression_failed, reason}}
-    end
-  rescue
-    e -> {:error, {:compression_failed, e}}
-  end
+  # Plain bzip2 stream (numcodecs BZ2 format).
+  defp compress_builtin(data, :bzip2, opts),
+    do: ex_codecs_encode(:bzip2, data, block_size: Keyword.get(opts, :level, 9))
 
-  defp compress_builtin(data, :blosc, opts) when is_binary(data) do
-    level = Keyword.get(opts, :level, 5)
-
-    case ZigCodecs.blosc_compress(data, level) do
-      {:ok, compressed} -> {:ok, compressed}
-      compressed when is_binary(compressed) -> {:ok, compressed}
-      {:error, reason} -> {:error, {:compression_failed, reason}}
-    end
-  rescue
-    e -> {:error, {:compression_failed, e}}
-  end
-
-  defp compress_builtin(data, :bzip2, opts) when is_binary(data) do
-    level = Keyword.get(opts, :level, 9)
-    # Bzip2 also requires original size, prepend it (8 bytes)
-    original_size = byte_size(data)
-
-    case ZigCodecs.bzip2_compress(data, level) do
-      {:ok, compressed} ->
-        {:ok, <<original_size::64-unsigned-native, compressed::binary>>}
-
-      compressed when is_binary(compressed) ->
-        {:ok, <<original_size::64-unsigned-native, compressed::binary>>}
-
-      {:error, reason} ->
-        {:error, {:compression_failed, reason}}
-    end
-  rescue
-    e -> {:error, {:compression_failed, e}}
-  end
-
-  defp compress_builtin(data, :crc32c, _opts) when is_binary(data) do
-    # CRC32C is a checksum codec, not compression
-    # Appends 4-byte CRC32C checksum to data
-    case ZigCodecs.crc32c_encode(data) do
+  # Appends a little-endian CRC32C.
+  defp compress_builtin(data, :crc32c, _opts) do
+    case ExCodecs.encode(:crc32c, data) do
       {:ok, checksummed} -> {:ok, checksummed}
-      checksummed when is_binary(checksummed) -> {:ok, checksummed}
-      {:error, reason} -> {:error, {:checksum_failed, reason}}
+      {:error, error} -> {:error, {:checksum_failed, error.reason}}
     end
-  rescue
-    e -> {:error, {:checksum_failed, e}}
+  end
+
+  defp zlib_compress(data, level) do
+    z = :zlib.open()
+
+    try do
+      :ok = :zlib.deflateInit(z, level)
+      compressed = :zlib.deflate(z, data, :finish)
+      :ok = :zlib.deflateEnd(z)
+      IO.iodata_to_binary(compressed)
+    after
+      :zlib.close(z)
+    end
+  end
+
+  defp ex_codecs_encode(codec, data, opts) do
+    case ExCodecs.encode(codec, data, opts) do
+      {:ok, compressed} -> {:ok, compressed}
+      {:error, error} -> {:error, {:compression_failed, error.reason}}
+    end
   end
 
   @doc """
@@ -317,8 +283,8 @@ defmodule ExZarr.Codecs do
 
   ## Notes
 
-  For `:lz4` and `:bzip2`, the original size is stored in the first 8 bytes
-  of the compressed data (prepended during compression).
+  `:lz4` and `:bzip2` also read the 8-byte size-prefixed layout written by
+  ExZarr 1.1.
   """
   @spec decompress(binary(), codec()) :: {:ok, binary()} | {:error, term()}
 
@@ -360,100 +326,93 @@ defmodule ExZarr.Codecs do
   # Built-in codec implementations
   defp decompress_builtin(data, :none), do: {:ok, data}
 
-  defp decompress_builtin(data, :zlib) when is_binary(data) do
-    ZigCodecs.zlib_decompress(data)
+  defp decompress_builtin(data, :zlib) do
+    {:ok, :zlib.uncompress(data)}
   rescue
     e -> {:error, {:decompression_failed, e}}
   end
 
-  defp decompress_builtin(data, :zstd) when is_binary(data) do
-    case ZigCodecs.zstd_decompress(data) do
+  defp decompress_builtin(data, :zstd), do: ex_codecs_decode(:zstd, data)
+
+  defp decompress_builtin(data, :lz4) do
+    case ex_codecs_decode(:lz4, data) do
       {:ok, decompressed} -> {:ok, decompressed}
-      decompressed when is_binary(decompressed) -> {:ok, decompressed}
-      {:error, reason} -> {:error, {:decompression_failed, reason}}
+      error -> decode_legacy_lz4(data, error)
     end
-  rescue
-    e -> {:error, {:decompression_failed, e}}
   end
 
-  defp decompress_builtin(data, :lz4) when is_binary(data) do
-    # Extract original size from first 8 bytes
-    case data do
-      <<original_size::64-unsigned-native, compressed::binary>> ->
-        case ZigCodecs.lz4_decompress(compressed, original_size) do
-          {:ok, decompressed} -> {:ok, decompressed}
-          decompressed when is_binary(decompressed) -> {:ok, decompressed}
-          {:error, reason} -> {:error, {:decompression_failed, reason}}
-        end
+  defp decompress_builtin(data, :snappy), do: ex_codecs_decode(:snappy, data)
 
-      _ ->
-        {:error, {:decompression_failed, :invalid_lz4_format}}
-    end
-  rescue
-    e -> {:error, {:decompression_failed, e}}
-  end
+  # Reads Blosc1 (and Blosc2) chunks; the compressor settings are in the header.
+  defp decompress_builtin(data, :blosc), do: ex_codecs_decode(:blosc, data)
 
-  defp decompress_builtin(data, :snappy) when is_binary(data) do
-    case ZigCodecs.snappy_decompress(data) do
+  defp decompress_builtin(data, :bzip2) do
+    case ex_codecs_decode(:bzip2, data) do
       {:ok, decompressed} -> {:ok, decompressed}
-      decompressed when is_binary(decompressed) -> {:ok, decompressed}
-      {:error, reason} -> {:error, {:decompression_failed, reason}}
+      error -> decode_legacy_bzip2(data, error)
     end
-  rescue
-    e -> {:error, {:decompression_failed, e}}
   end
 
-  defp decompress_builtin(data, :blosc) when is_binary(data) do
-    case ZigCodecs.blosc_decompress(data) do
-      {:ok, decompressed} -> {:ok, decompressed}
-      decompressed when is_binary(decompressed) -> {:ok, decompressed}
-      {:error, reason} -> {:error, {:decompression_failed, reason}}
-    end
-  rescue
-    e -> {:error, {:decompression_failed, e}}
-  end
-
-  defp decompress_builtin(data, :bzip2) when is_binary(data) do
-    # Extract original size from first 8 bytes
-    case data do
-      <<original_size::64-unsigned-native, compressed::binary>> ->
-        case ZigCodecs.bzip2_decompress(compressed, original_size) do
-          {:ok, decompressed} -> {:ok, decompressed}
-          decompressed when is_binary(decompressed) -> {:ok, decompressed}
-          {:error, reason} -> {:error, {:decompression_failed, reason}}
-        end
-
-      _ ->
-        {:error, {:decompression_failed, :invalid_bzip2_format}}
-    end
-  rescue
-    e -> {:error, {:decompression_failed, e}}
-  end
-
-  defp decompress_builtin(data, :crc32c) when is_binary(data) do
-    # CRC32C is a checksum codec
-    # Validates and removes 4-byte CRC32C checksum from end of data
-    case ZigCodecs.crc32c_decode(data) do
+  # Verifies and strips a trailing little-endian CRC32C.
+  defp decompress_builtin(data, :crc32c) do
+    case ExCodecs.decode(:crc32c, data) do
       {:ok, validated} -> {:ok, validated}
-      validated when is_binary(validated) -> {:ok, validated}
-      {:error, reason} -> {:error, {:checksum_validation_failed, reason}}
+      {:error, error} -> {:error, {:checksum_validation_failed, crc32c_reason(error.reason)}}
     end
-  rescue
-    e -> {:error, {:checksum_validation_failed, e}}
   end
+
+  # ExZarr 1.1 wrote LZ4 as an 8-byte native-endian size followed by a raw LZ4
+  # block. A valid block never starts with a zero token after a 4-byte size, so
+  # the standard decode fails on this layout and we retry with the 4-byte
+  # prefix numcodecs (and ExCodecs) use.
+  defp decode_legacy_lz4(<<size::64-unsigned-native, block::binary>>, _error)
+       when size <= 0xFFFFFFFF do
+    case ex_codecs_decode(:lz4, <<size::32-little, block::binary>>) do
+      {:ok, decompressed} when byte_size(decompressed) == size -> {:ok, decompressed}
+      _ -> {:error, {:decompression_failed, :invalid_lz4_format}}
+    end
+  end
+
+  defp decode_legacy_lz4(_data, error), do: error
+
+  # ExZarr 1.1 wrote bzip2 as an 8-byte native-endian size followed by the stream.
+  defp decode_legacy_bzip2(<<size::64-unsigned-native, "BZh", _::binary>> = data, _error) do
+    <<_::binary-size(8), stream::binary>> = data
+
+    case ex_codecs_decode(:bzip2, stream) do
+      {:ok, decompressed} when byte_size(decompressed) == size -> {:ok, decompressed}
+      _ -> {:error, {:decompression_failed, :invalid_bzip2_format}}
+    end
+  end
+
+  defp decode_legacy_bzip2(_data, error), do: error
+
+  # Keep the error atoms ExZarr has always returned for CRC32C.
+  defp crc32c_reason(:truncated_input), do: :crc32c_invalid_data
+  defp crc32c_reason(:checksum_mismatch), do: :crc32c_checksum_mismatch
+  defp crc32c_reason(reason), do: reason
+
+  defp ex_codecs_decode(codec, data) do
+    case ExCodecs.decode(codec, data, max_output_size: max_chunk_bytes()) do
+      {:ok, decompressed} -> {:ok, decompressed}
+      {:error, error} -> {:error, {:decompression_failed, error.reason}}
+    end
+  end
+
+  # Upper bound on one decoded chunk, guarding against decompression bombs.
+  defp max_chunk_bytes, do: Application.get_env(:ex_zarr, :max_chunk_bytes, 256 * 1024 * 1024)
 
   @doc """
   Returns the list of available codecs.
 
-  This function checks which codecs are actually available at runtime.
-  `:none` and `:zlib` are always available. Other codecs require the
-  Zig NIFs to be compiled with the system libraries installed.
+  This function checks which codecs are available at runtime. `:none` and
+  `:zlib` are always available; the others are available whenever the
+  ExCodecs NIF is loaded.
 
   ## Examples
 
       ExZarr.Codecs.available_codecs()
-      # => [:none, :zlib, :zstd, :lz4, :snappy, :blosc, :bzip2]
-      # (if all system libraries are installed)
+      # => [:none, :zlib, :crc32c, :zstd, :lz4, :snappy, :blosc, :bzip2]
 
   ## Returns
 
@@ -471,8 +430,7 @@ defmodule ExZarr.Codecs do
   Returns `true` if the codec can be used with `compress/3` and `decompress/2`,
   `false` otherwise.
 
-  This function actually tests if the codec can be used by checking if the
-  necessary functions are exported from the ZigCodecs module.
+  Custom codecs answer through their `available?/0` callback.
 
   ## Examples
 
@@ -480,7 +438,7 @@ defmodule ExZarr.Codecs do
       # => true
 
       ExZarr.Codecs.codec_available?(:zstd)
-      # => true (if libzstd is installed and NIFs are compiled)
+      # => true
 
       ExZarr.Codecs.codec_available?(:unknown)
       # => false
@@ -503,7 +461,7 @@ defmodule ExZarr.Codecs do
         true
 
       {:ok, :builtin_crc32c} ->
-        true
+        nif_codec_available?(:crc32c)
 
       {:ok, :builtin_zstd} ->
         nif_codec_available?(:zstd)
@@ -533,62 +491,9 @@ defmodule ExZarr.Codecs do
     end
   end
 
-  # Private helper to check if a NIF codec is available
-  # Tests actual functionality instead of checking exports, since zigler
-  # NIFs may not show up correctly with function_exported?
-  defp nif_codec_available?(codec) do
-    test_data = "test"
-
-    case codec do
-      :zstd ->
-        case ZigCodecs.zstd_compress(test_data, 1) do
-          bin when is_binary(bin) -> true
-          {:ok, _} -> true
-          _ -> false
-        end
-
-      :lz4 ->
-        case ZigCodecs.lz4_compress(test_data) do
-          bin when is_binary(bin) -> true
-          {:ok, _} -> true
-          _ -> false
-        end
-
-      :snappy ->
-        case ZigCodecs.snappy_compress(test_data) do
-          bin when is_binary(bin) -> true
-          {:ok, _} -> true
-          _ -> false
-        end
-
-      :blosc ->
-        case ZigCodecs.blosc_compress(test_data, 1) do
-          bin when is_binary(bin) -> true
-          {:ok, _} -> true
-          _ -> false
-        end
-
-      :bzip2 ->
-        case ZigCodecs.bzip2_compress(test_data, 1) do
-          bin when is_binary(bin) -> true
-          {:ok, _} -> true
-          _ -> false
-        end
-
-      :crc32c ->
-        # CRC32C is always available (pure Zig implementation)
-        case ZigCodecs.crc32c_encode(test_data) do
-          bin when is_binary(bin) -> true
-          {:ok, _} -> true
-          _ -> false
-        end
-
-      _ ->
-        false
-    end
-  rescue
-    _ -> false
-  end
+  # The ExCodecs NIF ships precompiled for every supported target; a codec is
+  # unavailable only if the NIF failed to load.
+  defp nif_codec_available?(codec), do: codec in ExCodecs.available_codecs()
 
   # === Custom Codec Support ===
 

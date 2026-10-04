@@ -358,14 +358,14 @@ Codecs transform chunk data before storage. This includes compression (reduce si
 **Compression codecs** (reduce size):
 - `:zlib` - Standard compression (Erlang built-in, always available)
 - `:gzip` - Compatible with gzip tools (Erlang built-in)
-- `:zstd` - Fast compression with excellent ratio (Zig NIF)
-- `:lz4` - Very fast compression, lower ratio (Zig NIF)
-- `:blosc` - Multi-threaded compression (Zig NIF)
-- `:bzip2` - High compression ratio, slower (Zig NIF)
-- `:snappy` - Fast compression, moderate ratio (Zig NIF)
+- `:zstd` - Fast compression with excellent ratio
+- `:lz4` - Very fast compression, lower ratio
+- `:blosc` - Shuffle filters plus an inner compressor; strong on numeric data
+- `:bzip2` - High compression ratio, slower
+- `:snappy` - Fast compression, moderate ratio
 
 **Checksum codecs** (verify integrity):
-- `:crc32c` - CRC32 checksum for error detection (Zig NIF)
+- `:crc32c` - CRC32C checksum for error detection
 
 **Filter codecs** (transform before compression):
 - `Shuffle` - Reorder bytes by element position (improves compression for numeric data)
@@ -460,8 +460,8 @@ ExZarr internally converts v2 configuration to v3 pipeline for consistent execut
 ### Codec Selection Guidance
 
 **Prioritize availability:**
-- `:zlib` is always available (Erlang built-in)
-- Other codecs require Zig NIFs (see [Installation Guide](../../README.md#installation))
+- `:zlib` uses Erlang's built-in `:zlib`
+- The other codecs come from ExCodecs' precompiled NIFs and are available on all supported platforms
 
 **Compression vs speed trade-offs:**
 - **Fastest**: `:lz4` (good for hot data, frequent access)

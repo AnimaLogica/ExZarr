@@ -16,187 +16,73 @@ This guide helps diagnose and fix common ExZarr issues. Problems are organized b
 
 ## Build and Installation Issues
 
-### Issue: Zig compilation fails during `mix compile`
+ExZarr has no native code of its own. Compression codecs other than zlib
+and gzip come from [ExCodecs](https://hex.pm/packages/ex_codecs), which
+downloads a precompiled NIF for your platform during `mix deps.compile`. No
+Zig, Rust, or system compression libraries are involved.
 
-**Symptom**: Error messages mentioning "zig", "NIF", or "zigler" during compilation.
+### Issue: codec not available at runtime
 
-**Cause**: Missing system libraries for optional codecs (zstd, lz4, snappy, blosc, bzip2).
+**Symptom**: `ExZarr.Codecs.available_codecs()` lists only `[:none, :zlib]`,
+or creating an array with `compressor: :zstd` (or lz4, snappy, blosc, bzip2,
+crc32c) fails.
 
 **Diagnosis**:
 
-```bash
-# macOS: Check installed libraries
-brew list | grep -E "zstd|lz4|snappy|blosc|bzip2"
+```elixir
+ExZarr.Codecs.available_codecs()
+# Expected: [:none, :zlib, :crc32c, :zstd, :lz4, :snappy, :blosc, :bzip2]
 
-# Ubuntu/Debian: Check installed packages
-dpkg -l | grep -E "zstd|lz4|snappy|blosc|bzip2"
-
-# Arch Linux
-pacman -Q | grep -E "zstd|lz4|snappy|blosc|bzip2"
+ExCodecs.Native.nif_loaded?()
+# false means the ExCodecs NIF did not load
 ```
+
+**Cause**: the precompiled NIF was not downloaded (offline build, blocked
+proxy) or there is no binary for this platform.
 
 **Fix**:
 
 ```bash
-# macOS
-brew install zstd lz4 snappy c-blosc bzip2
-
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-
-# Arch Linux
-sudo pacman -S zstd lz4 snappy blosc bzip2
-
-# Fedora/RHEL
-sudo dnf install zstd-devel lz4-devel snappy-devel blosc-devel bzip2-devel
-
-# After installing libraries, recompile
-mix deps.clean ex_zarr --build
+# Re-fetch with network access
+mix deps.clean ex_codecs --build
 mix deps.get
-mix compile
+mix deps.compile ex_codecs
 ```
 
-**Workaround**: If you can't install these libraries, ExZarr will still work with zlib-only compression (always available, no dependencies):
+Binaries exist for macOS (Apple Silicon, Intel), Linux (x86_64, aarch64;
+glibc and musl) and Windows (x86_64). On other platforms, build the NIF from
+source (requires a Rust toolchain):
 
 ```elixir
-# Use zlib or gzip (no Zig NIFs needed)
+# mix.exs
+{:rustler, ">= 0.0.0", optional: true}
+
+# config/config.exs
+config :rustler_precompiled, :force_build, ex_codecs: true
+```
+
+**Workaround**: `:zlib` (and `:gzip` for v3) always work:
+
+```elixir
 {:ok, array} = ExZarr.create(
   shape: {1000, 1000},
   chunks: {100, 100},
   dtype: :float64,
-  compressor: :zlib  # Always available
+  compressor: :zlib
 )
 ```
 
 ---
 
-### Issue: Mix hangs during compilation
+### Issue: precompiled NIF download fails in CI or behind a proxy
 
-**Symptom**: `mix compile` stalls with no output for several minutes.
+**Symptom**: `mix deps.compile` fails while compiling `ex_codecs` with an
+error about downloading a precompiled NIF.
 
-**Cause**: Zigler is downloading the Zig toolchain (first-time only). This can take 5-10 minutes on slow connections.
-
-**Diagnosis**:
-
-```bash
-# Check if Zig is being downloaded
-ls -lh ~/.cache/zigler/
-
-# Monitor network activity (macOS)
-nettop -m tcp
-
-# Monitor network activity (Linux)
-iftop
-```
-
-**Fix**: Wait patiently. The download happens once and is cached.
-
-**Alternative**: Pre-install Zig manually to skip automatic download:
-
-```bash
-# macOS
-brew install zig
-
-# Ubuntu (download from ziglang.org)
-wget https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
-tar xf zig-linux-x86_64-0.11.0.tar.xz
-sudo mv zig-linux-x86_64-0.11.0 /usr/local/zig
-export PATH=$PATH:/usr/local/zig
-```
-
----
-
-### Issue: Architecture mismatch on Apple Silicon (M1/M2/M3)
-
-**Symptom**: Errors like "Architecture not supported", "dyld: Library not loaded", or "wrong architecture".
-
-**Cause**: System libraries installed for wrong architecture (x86_64 instead of ARM64).
-
-**Diagnosis**:
-
-```bash
-# Check current architecture
-uname -m  # Should show "arm64"
-
-# Check library architecture
-file /opt/homebrew/lib/libzstd.dylib  # Should show "arm64"
-
-# If using Rosetta accidentally
-arch  # Should show "arm64", not "i386"
-```
-
-**Fix**:
-
-```bash
-# Ensure using native Homebrew (not Rosetta)
-which brew  # Should be /opt/homebrew/bin/brew
-
-# Reinstall libraries for ARM64
-brew reinstall zstd lz4 snappy c-blosc bzip2
-
-# Clean and recompile
-mix deps.clean ex_zarr --build
-mix compile
-```
-
----
-
-### Issue: ExZarr compiles but codec not available at runtime
-
-**Symptom**: `{:error, :codec_not_available}` when creating array, even after successful compilation.
-
-**Diagnosis**:
-
-```elixir
-# Check which codecs are available
-ExZarr.Codecs.available_codecs()
-# Expected: [:zlib, :gzip, :zstd, :lz4, :snappy, :blosc, :bzip2, :crc32c]
-# If missing codecs, NIF failed to load
-
-# Check NIF load status
-:code.which(ExZarr.Codecs.ZigCodecs)
-# Should return path to .beam file, not :non_existing
-```
-
-**Cause**: Runtime library paths not configured correctly.
-
-**Fix**:
-
-```bash
-# Linux: Check LD_LIBRARY_PATH
-echo $LD_LIBRARY_PATH
-# Should include /usr/lib, /usr/local/lib
-
-export LD_LIBRARY_PATH=/usr/lib:/usr/local/lib:$LD_LIBRARY_PATH
-
-# macOS: Check DYLD_LIBRARY_PATH (rarely needed)
-# Homebrew libraries are usually found automatically
-
-# Verify libraries are loadable
-ldd /path/to/_build/dev/lib/ex_zarr/priv/zig_codecs.so  # Linux
-otool -L /path/to/_build/dev/lib/ex_zarr/priv/zig_codecs.so  # macOS
-```
-
----
-
-### Issue: Compilation fails with "zigler not found"
-
-**Symptom**: Error message "Could not find zigler" during compilation.
-
-**Cause**: Zigler dependency not installed.
-
-**Fix**:
-
-```bash
-# Ensure dependencies are fetched
-mix deps.get
-
-# If problem persists, clean and retry
-mix deps.clean --all
-mix deps.get
-mix compile
-```
+**Fix**: allow access to `github.com` release downloads, or cache `deps/`
+and `_build/` between CI runs so the NIF is downloaded once. RustlerPrecompiled
+also honours `HTTP_PROXY` / `HTTPS_PROXY`. As a last resort, build from source
+as shown above.
 
 ## Runtime Errors (Codec/Storage)
 
@@ -262,9 +148,9 @@ ExZarr.Codecs.available_codecs()
 |> Enum.member?(:zstd)  # Or whatever codec is used
 ```
 
-**Cause 1**: Codec not available on reading system.
+**Cause 1**: Codec not available on the reading system.
 
-**Fix**: Install required codec library (see [Build and Installation Issues](#build-and-installation-issues)).
+**Fix**: See [codec not available at runtime](#issue-codec-not-available-at-runtime).
 
 **Cause 2**: Corrupted chunk data.
 
@@ -278,14 +164,13 @@ ExZarr.Codecs.available_codecs()
 
 **Fix**: Re-write corrupted chunk or restore from backup.
 
-**Cause 3**: Codec version mismatch (rare).
+**Cause 3**: The chunk is larger than the decompression limit. The error is
+`{:decompression_failed, :output_limit_exceeded}`.
 
-**Fix**: Ensure same codec library versions on read/write systems:
+**Fix**: Raise the limit (default 256 MiB per chunk):
 
-```bash
-# Check version
-dpkg -l | grep libzstd  # Debian/Ubuntu
-brew list --versions zstd  # macOS
+```elixir
+config :ex_zarr, max_chunk_bytes: 1_073_741_824
 ```
 
 ---
@@ -1260,7 +1145,8 @@ Avoid these common mistakes:
   aws_access_key_id: System.get_env("AWS_ACCESS_KEY_ID")
   ```
 
-- [ ] **Not installing Zig codecs then wondering why they're unavailable**
+- [ ] **Building offline and wondering why codecs are unavailable**
+  - The ExCodecs NIF is downloaded during `mix deps.compile`
   - Check: `ExZarr.Codecs.available_codecs()`
 
 - [ ] **Expecting Python NumPy arrays when ExZarr returns nested tuples**
@@ -1408,7 +1294,7 @@ Available codecs: [:zlib, :gzip]
 
 Most issues fall into these categories:
 
-1. **Build/Installation**: Install system libraries for codecs
+1. **Build/Installation**: Make sure the ExCodecs precompiled NIF downloaded
 2. **Runtime Errors**: Check paths, permissions, codec availability
 3. **Memory**: Reduce chunk size or parallelism, use streaming
 4. **Cloud Storage**: Verify credentials, check regions, increase chunk size

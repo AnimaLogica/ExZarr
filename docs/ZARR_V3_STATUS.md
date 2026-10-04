@@ -12,7 +12,7 @@ against zarr-python **2.18.3** and **3.2.1 / 3.3.0 / 3.4.0** (fixtures in
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **Zarr v3.1 core metadata** | Supported | Scalars, zero-length dims, dim names, extensions |
-| **Unified Codec Pipeline** | Supported | Core codecs + Zig NIF compressors |
+| **Unified Codec Pipeline** | Supported | Core codecs + ExCodecs compressors (precompiled NIFs) |
 | **v3 Metadata Format** | Supported | `zarr.json` |
 | **Chunk key encoding** | Supported | `default` and `v2`, `/` or `.` separator |
 | **Automatic Version Detection** | Supported | Filesystem and cloud backends (probes `zarr.json`, then `.zarray`) |

@@ -22,12 +22,13 @@ defmodule ExZarr.Version do
 
   ## Default Version
 
-  The default version for new arrays can be configured:
+  `ExZarr.create/1` uses the `:zarr_version` option when given, otherwise the
+  configured default:
 
       # config/config.exs
       config :ex_zarr, default_zarr_version: 3
 
-  If not configured, v3 is used by default for new arrays.
+  If not configured, new arrays use v2 (for backward compatibility).
   """
 
   @type version :: 2 | 3
@@ -88,9 +89,10 @@ defmodule ExZarr.Version do
 
   The default can be configured via application config:
 
-      config :ex_zarr, default_zarr_version: 2  # or 3
+      config :ex_zarr, default_zarr_version: 3  # or 2
 
-  If not configured, defaults to version 3.
+  If not configured, defaults to version 2. `ExZarr.create/1` and
+  `ExZarr.Nx` use this when no `:zarr_version` option is given.
 
   ## Returns
 
@@ -99,11 +101,11 @@ defmodule ExZarr.Version do
   ## Examples
 
       iex> ExZarr.Version.default_version()
-      3
+      2
   """
   @spec default_version() :: version()
   def default_version do
-    Application.get_env(:ex_zarr, :default_zarr_version, 3)
+    Application.get_env(:ex_zarr, :default_zarr_version, 2)
   end
 
   @doc """

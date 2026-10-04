@@ -581,11 +581,11 @@ Override with `dimension_separator` option:
 |--------|----------------|---------------------|---------------|-------|
 | **zlib** | Always (Erlang) | Always | ✓ Yes | **Recommended for compatibility** |
 | **gzip** | Always (Erlang) | Always | ✓ Yes | Same as zlib with gzip headers |
-| **zstd** | Optional (Zig NIF) | Yes (numcodecs) | ✓ Yes | Requires libzstd on both sides |
-| **lz4** | Optional (Zig NIF) | Yes (numcodecs) | ✓ Yes | Requires liblz4 on both sides |
-| **blosc** | Optional (Zig NIF) | Yes (numcodecs) | ✓ Yes | Requires libblosc on both sides |
-| **snappy** | Optional (Zig NIF) | Yes (numcodecs) | Partial | Less common in Python ecosystem |
-| **bzip2** | Optional (Zig NIF) | Yes (numcodecs) | ✓ Yes | Requires libbz2 on both sides |
+| **zstd** | Always (ExCodecs) | Yes (numcodecs) | ✓ Yes | v2 and v3 |
+| **lz4** | Always (ExCodecs) | Yes (numcodecs) | ✓ Yes | v2 (`LZ4`); numcodecs size-prefixed block |
+| **blosc** | Always (ExCodecs) | Yes (numcodecs) | ✓ Yes | v2 and v3; Blosc1 chunks; v3 `cname`/`shuffle`/`typesize` honoured |
+| **snappy** | Always (ExCodecs) | No | ✗ No | No standard Zarr/numcodecs Snappy codec |
+| **bzip2** | Always (ExCodecs) | Yes (numcodecs) | ✓ Yes | v2 (`BZ2`, id `"bz2"`) |
 | **Custom** | Via behavior | Via numcodecs | ✗ No | Requires identical codec implementation |
 
 ### Recommendation for Maximum Compatibility
@@ -611,10 +611,10 @@ end
 **In Elixir:**
 ```elixir
 ExZarr.Codecs.codec_available?(:zstd)
-# => true (if libzstd installed)
+# => true
 
 ExZarr.Codecs.available_codecs()
-# => [:zlib, :gzip, :zstd, :lz4, :blosc, :bzip2, :crc32c]
+# => [:none, :zlib, :crc32c, :zstd, :lz4, :snappy, :blosc, :bzip2]
 ```
 
 **In Python:**

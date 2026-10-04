@@ -42,19 +42,6 @@ jobs:
           #   otp: '25.3'
 
     steps:
-      - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-      - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.16.0
-
-      - name: Verify Zig toolchain
-        run: |
-          echo "ZIG_EXECUTABLE_PATH=$(which zig)" >> "$GITHUB_ENV"
-          zig version
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -111,21 +98,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-
-      - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.16.0
-
-      - name: Verify Zig toolchain
-        run: |
-          echo "ZIG_EXECUTABLE_PATH=$(which zig)" >> "$GITHUB_ENV"
-          zig version
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -177,21 +149,6 @@ jobs:
       MIX_ENV: dev
 
     steps:
-      - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-
-      - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.16.0
-
-      - name: Verify Zig toolchain
-        run: |
-          echo "ZIG_EXECUTABLE_PATH=$(which zig)" >> "$GITHUB_ENV"
-          zig version
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -273,18 +230,6 @@ jobs:
         with:
           elixir-version: "1.19.5"
           otp-version: "28.3.1"
-      - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-      - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.16.0
-      - name: Verify Zig
-        run: |
-          echo "ZIG_EXECUTABLE_PATH=$(which zig)" >> "$GITHUB_ENV"
-          zig version
       - run: mix deps.get
       - name: Read zarr-python fixtures with ExZarr
         env:

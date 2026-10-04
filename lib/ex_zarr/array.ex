@@ -50,6 +50,7 @@ defmodule ExZarr.Array do
   use GenServer
   alias ExZarr.ChunkGrid.Irregular
   alias ExZarr.{Codecs, DataType, Indexing, Metadata, MetadataV3, Storage}
+  alias ExZarr.Codecs.CompressorConfig
   alias ExZarr.Codecs.PipelineV3
   alias ExZarr.Codecs.Registry
   alias ExZarr.Codecs.ShardingIndexed
@@ -106,6 +107,9 @@ defmodule ExZarr.Array do
   - `:chunks` - Tuple specifying chunk dimensions (required)
   - `:dtype` - Data type (default: `:float64`)
   - `:compressor` - Compression codec (default: `:zstd`)
+  - `:compressor_config` - Compressor settings, e.g. `[level: 9]` (see
+    `ExZarr.Codecs.CompressorConfig`)
+  - `:zarr_version` - `2` or `3` (default: `config :ex_zarr, default_zarr_version`, or `2`)
   - `:storage` - Storage backend (default: `:memory`)
   - `:path` - Path for filesystem storage
   - `:fill_value` - Fill value for uninitialized chunks (default: `0`)
@@ -145,12 +149,11 @@ defmodule ExZarr.Array do
   def create(opts) do
     require Logger
 
-    # Get version from opts (default to 2 for backward compatibility)
-    version = Keyword.get(opts, :zarr_version, 2)
     enable_server = Keyword.get(opts, :enable_server, false)
     enable_cache = Keyword.get(opts, :enable_cache, false)
 
-    with {:ok, config} <- validate_config(opts),
+    with {:ok, version} <- zarr_version(opts),
+         {:ok, config} <- validate_config(opts, version),
          {:ok, storage} <- Storage.init(Map.put(config, :zarr_format, version)),
          {:ok, metadata} <- create_metadata(config, version),
          {:ok, chunks} <- io_chunk_shape(metadata, config.chunks) do
@@ -1952,15 +1955,48 @@ defmodule ExZarr.Array do
     :ok
   end
 
-  defp validate_config(opts) do
+  # `zarr_version:` wins; otherwise `config :ex_zarr, default_zarr_version: ...`
+  # (default 2, for backward compatibility).
+  defp zarr_version(opts) do
+    case Keyword.get_lazy(opts, :zarr_version, &ExZarr.Version.default_version/0) do
+      version when version in [2, 3] -> {:ok, version}
+      other -> {:error, {:invalid_zarr_version, other}}
+    end
+  end
+
+  # v2 compresses chunks through ExZarr.Codecs, so any registered codec works.
+  defp validate_compressor(compressor, 2, _opts) do
+    case Registry.get(compressor) do
+      {:ok, _} -> {:ok, compressor}
+      {:error, :not_found} -> {:error, {:unsupported_codec, compressor}}
+    end
+  end
+
+  # v3 turns the compressor into a codec in zarr.json; it must have one rather
+  # than be dropped silently. An explicit `codecs:` list replaces it entirely.
+  defp validate_compressor(compressor, 3, opts) do
+    cond do
+      Keyword.has_key?(opts, :codecs) -> {:ok, compressor}
+      compressor == :none -> {:ok, compressor}
+      CompressorConfig.to_v3(compressor, []) != nil -> {:ok, compressor}
+      true -> {:error, {:unsupported_codec_for_v3, compressor}}
+    end
+  end
+
+  defp validate_config(opts, version) do
     with {:ok, shape} <- validate_shape(opts[:shape]),
-         {:ok, chunks} <- validate_chunks(opts[:chunks], shape) do
+         {:ok, chunks} <- validate_chunks(opts[:chunks], shape),
+         {:ok, compressor} <-
+           validate_compressor(Keyword.get(opts, :compressor, :zstd), version, opts),
+         {:ok, compressor_config} <-
+           CompressorConfig.normalize(compressor, Keyword.get(opts, :compressor_config)) do
       # Base config with validated/default values
       base_config = %{
         shape: shape,
         chunks: chunks,
         dtype: Keyword.get(opts, :dtype, :float64),
-        compressor: Keyword.get(opts, :compressor, :zstd),
+        compressor: compressor,
+        compressor_config: compressor_config,
         fill_value: Keyword.get(opts, :fill_value, 0),
         filters: Keyword.get(opts, :filters, nil),
         storage_type: Keyword.get(opts, :storage, :memory),
@@ -1969,7 +2005,10 @@ defmodule ExZarr.Array do
 
       # Pass through all backend-specific options by merging with opts
       # Backend-specific keys like :array_id, :table_name, :bucket, etc. will be preserved
-      config = Enum.into(opts, base_config)
+      config =
+        opts
+        |> Keyword.delete(:compressor_config)
+        |> Enum.into(base_config)
 
       {:ok, config}
     end
@@ -3742,7 +3781,7 @@ defmodule ExZarr.Array do
       2 ->
         # v2 path: apply filters in forward order, then compress
         with {:ok, filtered} <- apply_filters_encode(chunk_data, array.metadata.filters) do
-          Codecs.compress(filtered, array.compressor)
+          Codecs.compress(filtered, array.compressor, array.metadata.compressor_config || [])
         end
 
       3 ->

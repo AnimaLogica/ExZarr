@@ -20,11 +20,31 @@ import zarr
 
 
 def write_v2(out: Path) -> list[dict]:
+    from numcodecs import BZ2, LZ4, Blosc, Zstd
+
+    fixtures = []
     path = out / "v2_float64_2d"
     data = np.arange(20, dtype="float64").reshape(4, 5)
     arr = zarr.open(str(path), mode="w", shape=data.shape, chunks=(2, 5), dtype="float64")
     arr[:] = data
-    return [entry("v2_float64_2d", path, data)]
+    fixtures.append(entry("v2_float64_2d", path, data))
+
+    # One array per numcodecs compressor ExZarr supports.
+    data = (np.arange(400, dtype="<f8") * 1.5).reshape(20, 20)
+    for name, compressor in [
+        ("v2_zstd", Zstd(level=3)),
+        ("v2_lz4", LZ4()),
+        ("v2_bz2", BZ2(level=5)),
+        ("v2_blosc_lz4_bitshuffle", Blosc(cname="lz4", clevel=5, shuffle=Blosc.BITSHUFFLE)),
+    ]:
+        path = out / name
+        arr = zarr.open(
+            str(path), mode="w", shape=data.shape, chunks=(10, 10), dtype="<f8", compressor=compressor
+        )
+        arr[:] = data
+        fixtures.append(entry(name, path, data))
+
+    return fixtures
 
 
 def write_v3(out: Path) -> list[dict]:

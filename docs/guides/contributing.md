@@ -25,9 +25,9 @@ Before you begin, ensure you have:
   # Elixir 1.19.5 (compiled with Erlang/OTP 28)
   ```
 
-- **Zig toolchain** (for codec development, optional)
-  - Zigler will automatically download Zig on first compile
-  - Or install manually: `brew install zig` (macOS), download from [ziglang.org](https://ziglang.org) (other platforms)
+- No native toolchain is needed. Compression codecs come from
+  [ExCodecs](https://hex.pm/packages/ex_codecs), whose NIFs are downloaded
+  precompiled. Codec implementation work happens in that repository.
 
 - **Git** for version control
   ```bash
@@ -61,7 +61,7 @@ git remote add upstream https://github.com/AnimaLogica/ExZarr.git
 # Install dependencies
 mix deps.get
 
-# Compile (includes Zig NIFs - may take a few minutes on first run)
+# Compile
 mix compile
 
 # Run tests to verify setup
@@ -75,7 +75,7 @@ mix credo
 mix dialyzer
 ```
 
-**Note**: First compilation may take 5-10 minutes as Zigler downloads the Zig toolchain and compiles NIFs. Subsequent compilations are much faster.
+**Note**: `mix deps.get` downloads the precompiled ExCodecs NIF for your platform; no native code is compiled.
 
 ### Development Workflow
 
@@ -147,7 +147,7 @@ ExZarr/
 │   │   ├── codecs/
 │   │   │   ├── codec.ex              # Codec behavior definition
 │   │   │   ├── registry.ex           # Codec discovery and registration
-│   │   │   ├── zig_codecs.ex         # Zig NIF codec implementations
+│   │   │   ├── sharding_indexed.ex   # sharding_indexed codec (v3)
 │   │   │   ├── pipeline_v3.ex        # v3 codec pipeline orchestration
 │   │   │   └── filters/              # v3 filter implementations
 │   │   ├── storage/
@@ -185,8 +185,6 @@ ExZarr/
 │       ├── test_helper.ex
 │       ├── setup_python_tests.sh
 │       └── fixtures/
-├── native/                           # Zig NIFs source code
-│   └── codecs/                       # Compression codec implementations
 ├── docs/guides/                           # User documentation (markdown)
 ├── examples/                         # Example scripts (runnable .exs files)
 ├── benchmarks/                       # Performance benchmarks
@@ -1271,6 +1269,6 @@ Thank you for contributing to ExZarr! Every contribution helps make the library 
 - [Elixir Style Guide](https://github.com/christopheradams/elixir_style_guide)
 - [Writing Documentation](https://hexdocs.pm/elixir/writing-documentation.html)
 - [Zarr Specification](https://zarr-specs.readthedocs.io/)
-- [Zigler Documentation](https://hexdocs.pm/zigler/)
+- [ExCodecs Documentation](https://hexdocs.pm/ex_codecs/)
 
 For questions, open an issue on GitHub: [https://github.com/AnimaLogica/ExZarr/issues](https://github.com/AnimaLogica/ExZarr/issues)

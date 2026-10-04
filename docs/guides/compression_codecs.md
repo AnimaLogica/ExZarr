@@ -127,11 +127,13 @@ Read Path: Reverse order (Storage → Decompression → ... → Array Data)
 **Configuration:**
 ```elixir
 compressor: :zlib
-compressor_config: [level: 6]  # 1-9, default 6
+compressor_config: [level: 6]  # 0-9, default 6
 ```
 
+In Zarr v3, `:zlib` arrays use the `gzip` codec (default level 5).
+
 **Characteristics:**
-- **Compression level:** 1 (fast) to 9 (best compression)
+- **Compression level:** 0 (stored) to 9 (best compression)
 - **Compression speed:** ~10-50 MB/s
 - **Decompression speed:** ~100-300 MB/s
 - **Compression ratio:** 2-4× (typical)
@@ -140,7 +142,7 @@ compressor_config: [level: 6]  # 1-9, default 6
 **Best for:**
 - Compatibility (works everywhere)
 - Reliable default choice
-- Systems without Zig NIFs
+- Systems where the ExCodecs NIF cannot load
 
 **Example:**
 ```elixir
@@ -155,14 +157,17 @@ compressor_config: [level: 6]  # 1-9, default 6
 )
 ```
 
-### gzip (Erlang Built-in)
+### gzip (Erlang Built-in, Zarr v3)
 
-**Implementation:** Erlang `:zlib` module with gzip headers
+**Implementation:** Erlang `:zlib` module with gzip headers. This is the Zarr
+v3 `gzip` codec; Zarr v2 arrays use `:zlib` instead (`compressor: :gzip` is
+rejected for v2).
 
 **Configuration:**
 ```elixir
-compressor: :gzip
-compressor_config: [level: 6]
+zarr_version: 3,
+compressor: :gzip,
+compressor_config: [level: 6]  # 0-9, default 5
 ```
 
 **Characteristics:**
@@ -174,9 +179,9 @@ compressor_config: [level: 6]
 - Compatibility with gzip tools
 - Archives that need CLI decompression
 
-### zstd (Zig NIF, Requires libzstd)
+### zstd
 
-**Implementation:** Zig NIF calling libzstd
+**Implementation:** ExCodecs (pure-Rust Zstandard), standard zstd frames
 
 **Configuration:**
 ```elixir
@@ -209,36 +214,25 @@ compressor_config: [level: 3]  # 1-22, default 3
 )
 ```
 
-**Availability:**
-```bash
-# macOS
-brew install zstd
-
-# Ubuntu/Debian
-sudo apt-get install libzstd-dev
-
-# Fedora/RHEL
-sudo dnf install zstd-devel
-```
-
-Check at runtime:
+**Availability:** included with ExZarr (precompiled ExCodecs NIF). Check at
+runtime:
 ```elixir
 ExZarr.Codecs.codec_available?(:zstd)
-# => true (if libzstd installed)
+# => true
 ```
 
-### lz4 (Zig NIF, Requires liblz4)
+### lz4
 
-**Implementation:** Zig NIF calling liblz4
+**Implementation:** ExCodecs (`lz4_flex`), LZ4 block with a 4-byte little-endian size prefix, the numcodecs `LZ4` format
 
 **Configuration:**
 ```elixir
 compressor: :lz4
-compressor_config: [level: 1]  # 1-12, default 1
 ```
 
+LZ4 takes no settings; `compressor_config` must be empty.
+
 **Characteristics:**
-- **Compression level:** 1 (fastest) to 12 (higher compression)
 - **Compression speed:** ~200-500 MB/s
 - **Decompression speed:** ~1-3 GB/s (extremely fast)
 - **Compression ratio:** 1.5-2.5× (typical)
@@ -262,14 +256,17 @@ compressor_config: [level: 1]  # 1-12, default 1
 )
 ```
 
-### snappy (Zig NIF, Requires libsnappy)
+### snappy
 
-**Implementation:** Zig NIF calling libsnappy
+**Implementation:** ExCodecs (`snap`), raw Snappy blocks
 
 **Configuration:**
 ```elixir
 compressor: :snappy  # No level parameter
 ```
+
+Zarr v2 only: there is no Zarr v3 snappy codec, so `compressor: :snappy`
+with `zarr_version: 3` is rejected.
 
 **Characteristics:**
 - **Compression level:** Fixed (no configuration)
@@ -294,27 +291,44 @@ compressor: :snappy  # No level parameter
 )
 ```
 
-### blosc (Zig NIF, Requires libblosc)
+### blosc
 
-**Implementation:** Zig NIF calling libblosc (meta-compressor)
+**Implementation:** ExCodecs, Blosc1 chunks (the c-blosc 1.x / numcodecs / Zarr `blosc` format)
 
-**Configuration:**
+**Configuration (Zarr v3):** set the inner compressor, shuffle and typesize in
+the `blosc` codec configuration, as zarr-python does:
 ```elixir
-compressor: :blosc
-compressor_config: [
-  compressor: :zstd,  # Internal compressor: :lz4, :zstd, :zlib
-  level: 5,
-  blocksize: 0,       # 0 = automatic
-  shuffle: true       # Built-in shuffle
+codecs: [
+  %{name: "bytes", configuration: %{endian: "little"}},
+  %{
+    name: "blosc",
+    configuration: %{
+      cname: "zstd",         # blosclz | lz4 | lz4hc | zlib | zstd
+      clevel: 5,             # 0-9
+      shuffle: "bitshuffle", # noshuffle | shuffle | bitshuffle
+      typesize: 8            # element size in bytes
+    }
+  }
 ]
 ```
 
+**Configuration (Zarr v2 and v3):** the same settings through
+`compressor_config`, which ExZarr turns into the numcodecs `.zarray` entry
+(v2) or the codec configuration above (v3):
+```elixir
+compressor: :blosc,
+compressor_config: [cname: :zstd, level: 5, shuffle: :bit, typesize: 8]
+```
+
+Without settings, ExZarr uses BloscLZ, level 5, byte shuffle and typesize 1.
+numcodecs' v2 `Blosc` entry has no `typesize`, so for v2 arrays a configured
+`typesize` applies only until the array is reopened.
+
 **Characteristics:**
-- **Meta-compressor:** Uses lz4/zstd/zlib internally
-- **SIMD acceleration:** Optimized for numerical arrays
-- **Built-in shuffle:** Automatically reorders bytes
-- **Multithreaded:** Can use multiple cores
-- **Compression ratio:** Varies by internal compressor (2-6×)
+- **Meta-compressor:** BloscLZ, LZ4, zlib or zstd inside each block
+- **Shuffle filters:** byte or bit shuffle group bytes of equal significance
+- **Compression ratio:** Varies by inner compressor and data (2-6× typical)
+- **Interoperable:** Blosc1 chunks are read by numcodecs and zarr-python
 
 **Best for:**
 - Scientific/numerical data (float arrays)
@@ -327,20 +341,19 @@ compressor_config: [
   shape: {10000, 10000},
   chunks: {1000, 1000},
   dtype: :float64,
-  compressor: :blosc,
-  compressor_config: [
-    compressor: :zstd,
-    level: 5,
-    shuffle: true  # Optimize for typed arrays
+  zarr_version: 3,
+  codecs: [
+    %{name: "bytes", configuration: %{endian: "little"}},
+    %{name: "blosc", configuration: %{cname: "zstd", clevel: 5, shuffle: "shuffle", typesize: 8}}
   ],
   storage: :filesystem,
   path: "/data/scientific_array"
 )
 ```
 
-### bzip2 (Zig NIF, Requires libbz2)
+### bzip2
 
-**Implementation:** Zig NIF calling libbz2
+**Implementation:** ExCodecs (pure-Rust bzip2), plain bzip2 streams, the numcodecs `BZ2` format
 
 **Configuration:**
 ```elixir
@@ -376,9 +389,9 @@ compressor_config: [level: 9]  # 1-9, default 9
 
 **Warning:** Use only for archival. Slow compression and decompression make it unsuitable for active workloads.
 
-### crc32c (Zig NIF, Checksum)
+### crc32c (Checksum)
 
-**Implementation:** Zig NIF with CRC32C algorithm
+**Implementation:** ExCodecs, appends a little-endian CRC32C (Zarr v3 `crc32c`)
 
 **Configuration:**
 ```elixir
@@ -976,46 +989,6 @@ Uncompressed: 7.63 MB
 
 ## Troubleshooting Codec Issues
 
-### Issue: Zig Codec Compilation Fails
-
-**Symptom:**
-```
-** (Mix) Could not compile dependency :ex_zarr
-...
-error: unable to find library -lzstd
-```
-
-**Cause:** Missing system libraries (libzstd, liblz4, libsnappy, etc.)
-
-**Fix:**
-Install required libraries for your platform:
-
-```bash
-# macOS
-brew install zstd lz4 snappy c-blosc bzip2
-
-# Ubuntu/Debian
-sudo apt-get install libzstd-dev liblz4-dev libsnappy-dev libblosc-dev libbz2-dev
-
-# Fedora/RHEL
-sudo dnf install zstd-devel lz4-devel snappy-devel blosc-devel bzip2-devel
-```
-
-Then recompile:
-```bash
-mix deps.clean ex_zarr --build
-mix deps.get
-mix compile
-```
-
-**Workaround:** Use `:zlib` (always available, no dependencies):
-```elixir
-{:ok, array} = ExZarr.create(
-  compressor: :zlib,  # Erlang built-in, always works
-  # ... other options
-)
-```
-
 ### Issue: Codec Not Available at Runtime
 
 **Symptom:**
@@ -1023,48 +996,27 @@ mix compile
 {:error, {:unsupported_codec, :zstd}}
 ```
 
-**Cause:** Zig NIF failed to load or system library missing at runtime.
+**Cause:** the ExCodecs NIF did not load, usually because its precompiled
+binary was not downloaded during `mix deps.compile` (offline build) or the
+platform has no binary.
 
 **Diagnosis:**
 ```elixir
-# Check which codecs are available
 ExZarr.Codecs.available_codecs()
-# => [:zlib, :gzip]  # Only Erlang built-ins
+# => [:none, :zlib]  # ExCodecs NIF not loaded
 
-# Check specific codec
-ExZarr.Codecs.codec_available?(:zstd)
+ExCodecs.Native.nif_loaded?()
 # => false
 ```
 
-**Fix:**
-1. Verify system libraries are installed
-2. Check NIF file exists:
-   ```bash
-   ls -la _build/dev/lib/ex_zarr/priv/zig_codecs.so
-   ```
-3. Check library dependencies (Linux):
-   ```bash
-   ldd _build/dev/lib/ex_zarr/priv/zig_codecs.so
-   ```
-
-**Workaround:** Fallback to zlib in application code:
-```elixir
-defmodule MyApp.ArrayFactory do
-  def create_array(opts) do
-    # Prefer zstd, fallback to zlib
-    compressor = if ExZarr.Codecs.codec_available?(:zstd) do
-      :zstd
-    else
-      :zlib
-    end
-
-    ExZarr.create(
-      compressor: compressor,
-      # ... other options
-    )
-  end
-end
+**Fix:** re-fetch with network access:
+```bash
+mix deps.clean ex_codecs --build
+mix deps.get && mix deps.compile ex_codecs
 ```
+
+See the [Troubleshooting guide](troubleshooting.md#issue-codec-not-available-at-runtime)
+for building from source on other platforms.
 
 ### Issue: Decompression Fails on Existing Array
 
@@ -1073,27 +1025,16 @@ end
 {:error, :decompression_failed}
 ```
 
-**Cause:** Array created with codec not available on reading system.
+**Causes:**
+- The codec is unavailable on the reading system (see above).
+- The chunk is larger than the decompression limit
+  (`{:decompression_failed, :output_limit_exceeded}`); raise it with
+  `config :ex_zarr, max_chunk_bytes: ...` (default 256 MiB).
+- The chunk is corrupt.
 
-**Example:**
-```elixir
-# Created on system A with zstd
-{:ok, array} = ExZarr.create(compressor: :zstd, path: "/data/array")
-
-# Opened on system B without libzstd
-{:ok, array} = ExZarr.open(path: "/data/array")
-{:error, :decompression_failed} = ExZarr.Array.get_slice(...)
-```
-
-**Fix:** Install required codec library on reading system.
-
-**Prevention:** Use widely available codecs for portability:
-```elixir
-# Portable: zlib works everywhere
-{:ok, array} = ExZarr.create(compressor: :zlib, ...)
-
-# Or document codec requirements
-```
+**Prevention:** for arrays other tools must read, use codecs those tools
+support. zstd, blosc, lz4, bzip2, zlib/gzip and crc32c are all readable by
+zarr-python.
 
 ### Issue: Poor Compression Ratio
 

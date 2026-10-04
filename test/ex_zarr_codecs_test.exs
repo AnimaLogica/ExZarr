@@ -271,26 +271,4 @@ defmodule ExZarr.CodecsExtendedTest do
       assert compressed == decompressed
     end
   end
-
-  describe "ZigCodecs module" do
-    alias ExZarr.Codecs.ZigCodecs
-
-    test "zlib_compress works directly" do
-      data = "Direct zlib test"
-      assert {:ok, compressed} = ZigCodecs.zlib_compress(data)
-      assert byte_size(compressed) > 0
-    end
-
-    test "zlib_decompress works directly" do
-      data = "Direct zlib test"
-      {:ok, compressed} = ZigCodecs.zlib_compress(data)
-      assert {:ok, ^data} = ZigCodecs.zlib_decompress(compressed)
-    end
-
-    test "handles compression errors gracefully" do
-      # zlib_decompress with invalid data should handle errors
-      result = ZigCodecs.zlib_decompress("invalid compressed data")
-      assert match?({:error, _}, result)
-    end
-  end
 end
