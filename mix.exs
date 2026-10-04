@@ -75,8 +75,8 @@ defmodule ExZarr.MixProject do
       {:sweet_xml, "~> 0.7", optional: true},
       {:goth, "~> 1.4", optional: true},
       {:azure_sdk, "~> 0.4.1", optional: true},
-      # override: azure_sdk 0.4.1 still declares req ~> 0.5; CVE-2026-49755 needs >= 0.6.1
-      {:req, "~> 0.6.1", optional: true, override: true},
+      # >= 0.6.1 for CVE-2026-49755 (azure_sdk and ex_aws both allow 0.6)
+      {:req, "~> 0.6.1", optional: true},
 
       # Database storage backends (optional)
       {:mongodb_driver, "~> 1.4", optional: true},

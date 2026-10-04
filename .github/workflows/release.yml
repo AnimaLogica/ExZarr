@@ -1,0 +1,165 @@
+name: Release
+
+# Push a tag `vX.Y.Z` (matching @version in mix.exs) to verify, create the
+# GitHub release and publish to Hex. Run it manually (Actions -> Release ->
+# Run workflow) for a dry run: only the verify job runs; nothing is published.
+#
+# Requires the HEX_API_KEY repository secret
+# (Settings -> Secrets and variables -> Actions).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.3.1"
+
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)"
+          if [[ -z "${version}" ]]; then
+            echo "::error::Could not read @version from mix.exs"
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match mix.exs version ${version} (expected v${version})"
+            exit 1
+          fi
+
+          if ! grep -q "^## \[${version}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [${version}]' entry"
+            exit 1
+          fi
+
+          prerelease=false
+          [[ "${version}" == *-* ]] && prerelease=true
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${version} (prerelease: ${prerelease})"
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: release-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile
+        env:
+          MIX_ENV: test
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
+
+      - name: Build docs
+        run: mix docs --warnings-as-errors
+
+      - name: Build package
+        run: mix hex.build
+
+  github_release:
+    name: Create GitHub release
+    needs: verify
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          notes_file="docs/release_notes_v${VERSION//./_}.md"
+          if [[ -f "${notes_file}" ]]; then
+            cp "${notes_file}" release_notes.md
+          else
+            # The version's CHANGELOG section, up to the next "## [" heading.
+            awk -v v="${VERSION}" '
+              index($0, "## [" v "]") == 1 { found = 1; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md > release_notes.md
+          fi
+          test -s release_notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; leaving it as is."
+            exit 0
+          fi
+
+          flags=(--verify-tag --title "ExZarr ${GITHUB_REF_NAME}" --notes-file release_notes.md)
+          [[ "${PRERELEASE}" == "true" ]] && flags+=(--prerelease)
+          gh release create "${GITHUB_REF_NAME}" "${flags[@]}"
+
+  publish_hex:
+    name: Publish to Hex
+    needs: [verify, github_release]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Publish
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${HEX_API_KEY}" ]]; then
+            echo "::error::HEX_API_KEY secret is not set"
+            exit 1
+          fi
+          mix hex.publish --yes
