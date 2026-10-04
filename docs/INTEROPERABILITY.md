@@ -392,7 +392,7 @@ then the same `mix test --include python …` commands.
 ### Notes
 
 - The `python` executable used by Mix tests must be on `PATH` (tests shell out to it).
-- Elixir/Zig/system libs are the same as a normal ExZarr test run (`mix deps.get`, Zig for NIFs).
+- Elixir setup is the same as a normal ExZarr test run (`mix deps.get`); no native toolchain is needed.
 - Without `--include python` / `--only python_fixtures`, these tests are skipped.
 - Fixture generator details: `test/support/python_fixtures/README.md`.
 
