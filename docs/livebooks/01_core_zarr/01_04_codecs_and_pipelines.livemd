@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:ex_zarr, path: Path.join(__DIR__, "../../..")},
+  {:ex_zarr, "~> 1.2"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
   {:kino, "~> 0.13"}
 ])
 ```
