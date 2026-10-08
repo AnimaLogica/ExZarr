@@ -19,8 +19,8 @@ defmodule NxIntegrationExample do
   @moduledoc """
   Demonstrates integration between ExZarr and Nx.
 
-  Nx provides NumPy-like functionality for Elixir, making it a natural
-  fit for numerical computing with Zarr arrays.
+  Nx runs math on a whole grid of numbers in memory: summaries, matrix
+  multiplies, and training steps. ExZarr stores those grids as Zarr arrays.
   """
 
   def run do

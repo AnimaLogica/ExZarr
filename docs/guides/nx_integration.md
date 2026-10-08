@@ -2,6 +2,8 @@
 
 This guide shows how to integrate ExZarr with Nx (Numerical Elixir) for numerical computing and machine learning workflows. ExZarr provides persistent storage for Nx tensors, enabling workflows that exceed available memory.
 
+For what Nx is, when to use the bridge, and how tensor bytes relate to Zarr chunks, start with [Using Nx](getting_started.md#using-nx) in the getting started guide. This page is the API: conversion, chunk streams, and DataLoader.
+
 ** Performance Note:** ExZarr provides an optimized `ExZarr.Nx` module with **5-10x faster** conversion compared to manual approaches. Always use `ExZarr.Nx` for best performance.
 
 ## Table of Contents
@@ -46,12 +48,7 @@ tensor = Nx.iota({1000, 1000})
 
 ### The Relationship
 
-**Nx** (Numerical Elixir) provides NumPy-like functionality for Elixir:
-- In-memory numerical computing
-- Multi-dimensional tensors
-- Vectorized operations
-- Defn numerical definitions
-- Backend support (CPU, GPU via EXLA)
+**Nx** is how you run math on a whole grid of numbers in Elixir: sums and means, matrix multiplies, and the gradients a training step needs. The grid stays in memory as a tensor. `defn` compiles those expressions for the CPU, or for a GPU through EXLA or Torchx. [Axon](https://hexdocs.pm/axon) builds models on top of Nx. See [What is Nx](getting_started.md#what-is-nx) for a longer description.
 
 **ExZarr** provides persistent, chunked array storage:
 - Disk/cloud-backed arrays

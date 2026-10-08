@@ -21,6 +21,7 @@ interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
 - **High Performance** - 26x faster multi-chunk reads with near-optimal scaling (see [Performance Guide](docs/guides/performance.md))
 - **N-dimensional arrays** with support for 10 data types (int8-64, uint8-64, float32/64)
 - **BEAM-native streaming** - `stream_chunks/2`, `stream_slices/3`, and `write_stream/3` for bounded-memory processing
+- **Nx** - `ExZarr.Nx` converts arrays and chunks to tensors; `ExZarr.Nx.DataLoader` streams sample-axis batches for training. Nx is optional. See [Using Nx](docs/guides/getting_started.md#using-nx)
 - **Telemetry** - `:telemetry` events for chunk I/O and stream lifecycle (`ExZarr.Telemetry`)
 - **Pipeline integrations** - Optional Flow, GenStage, and Broadway support for production pipelines
 - **Parallel chunk processing** - Automatic parallel I/O and decompression for large operations
@@ -832,7 +833,8 @@ Practical examples demonstrating real-world usage:
   - Intuitive slicing by name instead of index
   - Real-world examples (climate, medical imaging)
   - Validation and best practices
-- **[Nx Integration](examples/nx_integration.exs)** - Numerical computing with Nx
+- **[Using Nx](docs/guides/getting_started.md#using-nx)** — what Nx is, when it fits, and how tensors and Zarr chunks exchange bytes
+- **[Nx Integration](docs/guides/nx_integration.md)** — conversion API, chunk streams, and DataLoader
   - Converting between Nx tensors and Zarr arrays
   - Machine learning workflows
   - Streaming large arrays
