@@ -349,7 +349,7 @@ Note: `<` indicates little-endian byte order (standard on most modern systems). 
 | Codec | Python (numcodecs) | ExZarr/Elixir | Availability |
 |-------|-------------------|---------------|--------------|
 | Zlib | `numcodecs.Zlib` | `:zlib` | Always (Erlang built-in) |
-| Gzip | `numcodecs.GZip` | `:gzip` | Always (Erlang built-in) |
+| Gzip | `numcodecs.GZip` | `:gzip` | Zarr v3 only (Erlang built-in) |
 | Zstd | `numcodecs.Zstd` | `:zstd` | Via ExCodecs |
 | LZ4 | `numcodecs.LZ4` | `:lz4` | Via ExCodecs |
 | Blosc | `numcodecs.Blosc` | `:blosc` | Via ExCodecs (Blosc1 chunks) |

@@ -248,6 +248,63 @@ defmodule ExZarr.Nx.DataLoaderTest do
       end
     end
 
+    describe "shuffled streams: reproducibility and caller state" do
+      defp int_array(values) do
+        {:ok, array} =
+          ExZarr.create(shape: {length(values)}, chunks: {4}, dtype: :int32, storage: :memory)
+
+        data = for v <- values, into: <<>>, do: <<v::32-signed-native>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {length(values)})
+        array
+      end
+
+      # Orders recorded from v1.3.0, so a seeded epoch is the same across versions.
+      test "a seed gives the same order as v1.3.0" do
+        features = int_array(Enum.to_list(0..9))
+        labels = int_array(Enum.map(0..9, &(&1 * 10)))
+
+        assert features
+               |> DataLoader.shuffled_batch_stream(3, seed: 42)
+               |> Enum.map(fn {:ok, t} -> Nx.to_flat_list(t) end) ==
+                 [[1, 3, 9], [4, 5, 7], [2, 6, 8], [0]]
+
+        paired =
+          features
+          |> DataLoader.paired_shuffled_batch_stream(labels, 4, seed: 7, drop_remainder: true)
+          |> Enum.map(fn {:ok, {x, y}} -> {Nx.to_flat_list(x), Nx.to_flat_list(y)} end)
+
+        assert paired == [
+                 {[1, 4, 3, 9], [10, 40, 30, 90]},
+                 {[7, 8, 0, 5], [70, 80, 0, 50]}
+               ]
+      end
+
+      test "shuffling does not change the caller's :rand state" do
+        array = int_array(Enum.to_list(0..9))
+
+        :rand.seed(:exsss, {1, 2, 3})
+        before = :rand.export_seed()
+        _ = array |> DataLoader.shuffled_batch_stream(3, seed: 99) |> Enum.to_list()
+        _ = array |> DataLoader.shuffled_batch_stream(3) |> Enum.to_list()
+        assert :rand.export_seed() == before
+
+        Process.delete(:rand_seed)
+        _ = array |> DataLoader.shuffled_batch_stream(3, seed: 5) |> Enum.to_list()
+        assert :rand.export_seed() == :undefined
+      end
+
+      test "drop_remainder keeps only full batches" do
+        array = int_array(Enum.to_list(0..9))
+
+        sizes =
+          array
+          |> DataLoader.shuffled_batch_stream(4, seed: 1, drop_remainder: true)
+          |> Enum.map(fn {:ok, t} -> Nx.size(t) end)
+
+        assert sizes == [4, 4]
+      end
+    end
+
     describe "paired_batch_stream/4" do
       test "loads features and labels together" do
         {:ok, features} = create_test_array({100, 20})

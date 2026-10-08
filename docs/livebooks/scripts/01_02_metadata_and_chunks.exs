@@ -358,7 +358,7 @@ IO.inspect(metadata_v3, limit: :infinity)
 # * `shape`: Tuple of dimensions
 # * `chunks`: Tuple of chunk dimensions
 # * `dtype`: Atom like `:float32`, `:int64`
-# * `compressor`: Atom like `:zstd`, `:gzip`
+# * `compressor`: Atom like `:zstd`, `:zlib` (`:gzip` on v3 only)
 # * `fill_value`: Default value
 # * `zarr_format`: Integer (2 or 3)
 

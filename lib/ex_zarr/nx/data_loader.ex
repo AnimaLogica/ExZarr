@@ -175,8 +175,12 @@ defmodule ExZarr.Nx.DataLoader do
   ## Shuffling Strategy
 
   Builds the full sample-index list, shuffles it, then loads each batch with
-  `get_slice/2` (one read per sample). Memory for the index list is
+  `get_slice/2` (one read per sample). Memory and time for the index list are
   O(number of samples). `:shuffle_buffer_size` is ignored.
+
+  Shuffling seeds the process's `:rand` generator with `:seed` and restores the
+  caller's previous `:rand` state afterwards, so it does not change other random
+  numbers in the calling process.
 
   ## Options
 
@@ -210,10 +214,9 @@ defmodule ExZarr.Nx.DataLoader do
         end)
       end
 
-      # Large shuffle buffer for better randomization
-      array
-      |> ExZarr.Nx.DataLoader.shuffled_batch_stream(32, shuffle_buffer_size: 1000)
-      |> Enum.to_list()
+      # The same seed gives the same order on every run
+      first = ExZarr.Nx.DataLoader.shuffled_batch_stream(array, 32, seed: 42) |> Enum.to_list()
+      ^first = ExZarr.Nx.DataLoader.shuffled_batch_stream(array, 32, seed: 42) |> Enum.to_list()
 
   """
   @spec shuffled_batch_stream(ExZarr.Array.t(), pos_integer(), [batch_option()]) ::
@@ -222,42 +225,12 @@ defmodule ExZarr.Nx.DataLoader do
       when is_integer(batch_size) and batch_size > 0 do
     shape = array.metadata.shape
     num_samples = elem(shape, 0)
-    seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
-    drop_remainder = Keyword.get(opts, :drop_remainder, false)
+    seed = Keyword.get_lazy(opts, :seed, &random_seed/0)
 
-    # Shuffle indices
-    indices = shuffle_indices(num_samples, seed)
-
-    # Calculate number of batches
-    num_batches =
-      if drop_remainder do
-        div(num_samples, batch_size)
-      else
-        div(num_samples + batch_size - 1, batch_size)
-      end
-
-    Stream.unfold(0, fn batch_idx ->
-      if batch_idx < num_batches do
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, num_samples)
-        actual_batch_size = end_idx - start_idx
-
-        # Get shuffled indices for this batch
-        batch_indices = Enum.slice(indices, start_idx, actual_batch_size)
-
-        # Load samples at shuffled indices
-        result = load_samples_at_indices(array, batch_indices, opts)
-
-        # Skip if dropping remainder and batch is incomplete
-        if drop_remainder and actual_batch_size < batch_size do
-          nil
-        else
-          {result, batch_idx + 1}
-        end
-      else
-        nil
-      end
-    end)
+    num_samples
+    |> shuffle_indices(seed)
+    |> index_batches(batch_size, Keyword.get(opts, :drop_remainder, false))
+    |> Stream.map(&load_samples_at_indices(array, &1, opts))
   end
 
   @doc """
@@ -391,42 +364,15 @@ defmodule ExZarr.Nx.DataLoader do
               "Got #{num_features} features and #{num_labels} labels."
     end
 
-    seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
-    drop_remainder = Keyword.get(opts, :drop_remainder, false)
+    seed = Keyword.get_lazy(opts, :seed, &random_seed/0)
 
-    # Shuffle indices (same for both arrays)
-    indices = shuffle_indices(num_features, seed)
-
-    num_batches =
-      if drop_remainder do
-        div(num_features, batch_size)
-      else
-        div(num_features + batch_size - 1, batch_size)
-      end
-
-    Stream.unfold(0, fn batch_idx ->
-      if batch_idx < num_batches do
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, num_features)
-        actual_batch_size = end_idx - start_idx
-
-        # Skip if dropping remainder and batch is incomplete
-        if drop_remainder and actual_batch_size < batch_size do
-          nil
-        else
-          # Get shuffled indices for this batch
-          batch_indices = Enum.slice(indices, start_idx, actual_batch_size)
-
-          # Load both batches with same indices
-          with {:ok, x_batch} <- load_samples_at_indices(features, batch_indices, opts),
-               {:ok, y_batch} <- load_samples_at_indices(labels, batch_indices, opts) do
-            {{:ok, {x_batch, y_batch}}, batch_idx + 1}
-          else
-            {:error, reason} -> {{:error, reason}, batch_idx + 1}
-          end
-        end
-      else
-        nil
+    num_features
+    |> shuffle_indices(seed)
+    |> index_batches(batch_size, Keyword.get(opts, :drop_remainder, false))
+    |> Stream.map(fn batch_indices ->
+      with {:ok, x_batch} <- load_samples_at_indices(features, batch_indices, opts),
+           {:ok, y_batch} <- load_samples_at_indices(labels, batch_indices, opts) do
+        {:ok, {x_batch, y_batch}}
       end
     end)
   end
@@ -483,7 +429,7 @@ defmodule ExZarr.Nx.DataLoader do
       tensor = Nx.from_binary(binary, nx_type) |> Nx.reshape(batch_shape)
 
       # Apply options
-      tensor = apply_tensor_options(tensor, opts)
+      tensor = ExZarrNx.apply_tensor_opts(tensor, opts)
 
       {:ok, tensor}
     end
@@ -523,7 +469,7 @@ defmodule ExZarr.Nx.DataLoader do
       stacked = Nx.stack(tensors)
 
       # Apply options
-      stacked = apply_tensor_options(stacked, opts)
+      stacked = ExZarrNx.apply_tensor_opts(stacked, opts)
 
       {:ok, stacked}
     else
@@ -532,27 +478,39 @@ defmodule ExZarr.Nx.DataLoader do
     end
   end
 
-  defp shuffle_indices(num_samples, seed) do
-    # Create range and shuffle
-    _ = :rand.seed(:exsss, {seed, seed * 2, seed * 3})
-    0..(num_samples - 1) |> Enum.to_list() |> Enum.shuffle()
+  # Default seed when :seed is not given. Drawn from :crypto so the caller's
+  # :rand state is not advanced.
+  defp random_seed do
+    <<value::unsigned-32>> = :crypto.strong_rand_bytes(4)
+    rem(value, 1_000_000) + 1
   end
 
-  defp apply_tensor_options(tensor, opts) do
-    # Apply axis names if provided
-    tensor =
-      case Keyword.get(opts, :names) do
-        nil -> tensor
-        names -> Nx.rename(tensor, names)
-      end
+  # Same algorithm and seeding as 1.3.0, so a seed gives the same order, but the
+  # caller's :rand state is restored afterwards instead of being overwritten.
+  defp shuffle_indices(num_samples, seed) do
+    previous = :rand.export_seed()
 
-    # Transfer to backend if specified
-    tensor =
-      case Keyword.get(opts, :backend) do
-        nil -> tensor
-        backend -> Nx.backend_transfer(tensor, backend)
+    try do
+      _ = :rand.seed(:exsss, {seed, seed * 2, seed * 3})
+      0..(num_samples - 1)//1 |> Enum.to_list() |> Enum.shuffle()
+    after
+      case previous do
+        :undefined -> Process.delete(:rand_seed)
+        state -> :rand.seed(state)
       end
+    end
+  end
 
-    tensor
+  # Groups indices into batches in one pass (Enum.slice/3 per batch was
+  # quadratic in the number of samples). A short final batch is dropped
+  # before it is read when drop_remainder is set.
+  defp index_batches(indices, batch_size, drop_remainder) do
+    batches = Stream.chunk_every(indices, batch_size)
+
+    if drop_remainder do
+      Stream.filter(batches, &(length(&1) == batch_size))
+    else
+      batches
+    end
   end
 end

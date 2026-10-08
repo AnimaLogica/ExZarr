@@ -16,7 +16,7 @@ Compression is critical for Zarr arrays — it reduces storage costs, speeds up 
 
 * Zarr v2 compressor model (single-stage)
 * Zarr v3 codec pipelines (multi-stage)
-* Common codecs: gzip, zstd, zlib, blosc
+* Common codecs: zstd, zlib, blosc (v2 and v3), gzip (v3 only)
 * Compression ratio vs speed trade-offs
 * Choosing codecs for different data types
 * Measuring compression effectiveness
@@ -48,8 +48,8 @@ graph LR
 
 **Simple and effective:** For most use cases, a single compressor is enough. v2 supports:
 
-* `gzip` - Widely compatible, moderate speed
-* `zlib` - Similar to gzip, slightly different format
+* `zlib` - Widely compatible, moderate speed (the v2 counterpart of v3 `gzip`)
+* `gzip` - Zarr v3 only; ExZarr rejects it as a v2 compressor
 * `zstd` - Faster, better ratios, modern choice
 * `blosc` - Optimized for numerical data, multiple algorithms
 * `lz4` - Extremely fast, lower compression ratio
@@ -87,7 +87,7 @@ These are called "array-to-array" or "array-to-bytes" codecs, followed by a "byt
 Let's create the same logical array with different v2 compressors and compare.
 
 ```elixir
-compressors = [:zstd, :gzip, :zlib, :blosc]
+compressors = [:zstd, :zlib, :blosc]
 
 arrays =
   Enum.map(compressors, fn comp ->
@@ -162,7 +162,7 @@ end)
 **Expected patterns:**
 
 * `zstd`: Fast, good compression
-* `gzip/zlib`: Slower, decent compression
+* `zlib`: Slower, decent compression
 * `blosc`: Very fast, excellent for numerical data
 * `lz4`: Fastest, lower compression ratio
 
@@ -282,8 +282,7 @@ graph TD
 
 * **zstd (default):** Best general-purpose choice. Fast, good compression, widely supported.
 * **blosc:** Excellent for numerical arrays (satellite data, simulation results). Use with zstd or lz4 backend.
-* **gzip:** Maximum compatibility. Slower, but readable by any tool.
-* **zlib:** Similar to gzip, slight differences in format.
+* **zlib (v2) / gzip (v3):** Maximum compatibility. Slower, but readable by any tool. ExZarr accepts `gzip` only for Zarr v3 arrays.
 * **lz4:** When speed is critical and compression ratio is secondary (e.g., temporary intermediate data).
 
 **For Zarr v3:** Start with zstd. Add byte shuffle if working with numerical data. Consider transpose for multidimensional arrays with non-uniform access patterns.
@@ -390,7 +389,7 @@ Compression isn't free. Let's measure the overhead.
     shape: {500, 500},
     chunks: {100, 100},
     dtype: :float32,
-    compressor: nil,
+    compressor: :none,
     storage: :memory
   )
 
@@ -473,7 +472,7 @@ Smaller datasets are easier to share, download, and distribute. Compressed array
 4. **blosc excels for numerical data** — built-in shuffling improves compression
 5. **Compression ratios depend on data** — structured data compresses better
 6. **Codec overhead is usually worth it** — I/O savings outweigh CPU cost
-7. **Choose based on priority** — speed (lz4), compression (zstd high level), compatibility (gzip)
+7. **Choose based on priority** — speed (lz4), compression (zstd high level), compatibility (zlib for v2, gzip for v3)
 
 ## What's Next
 

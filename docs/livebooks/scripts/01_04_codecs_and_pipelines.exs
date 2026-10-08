@@ -83,7 +83,7 @@ alias ExZarr.Gallery.{Pack, SampleData, Metrics}
 
 # Let's create the same logical array with different v2 compressors and compare.
 
-compressors = [:zstd, :gzip, :zlib, :blosc]
+compressors = [:zstd, :zlib, :blosc]
 
 arrays =
   Enum.map(compressors, fn comp ->
@@ -374,7 +374,7 @@ Result: 10-30x compression for typical climate data
     shape: {500, 500},
     chunks: {100, 100},
     dtype: :float32,
-    compressor: nil,
+    compressor: :none,
     storage: :memory
   )
 

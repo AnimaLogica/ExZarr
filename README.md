@@ -833,8 +833,8 @@ Practical examples demonstrating real-world usage:
   - Intuitive slicing by name instead of index
   - Real-world examples (climate, medical imaging)
   - Validation and best practices
-- **[Using Nx](docs/guides/getting_started.md#using-nx)** — what Nx is, when it fits, and how tensors and Zarr chunks exchange bytes
-- **[Nx Integration](docs/guides/nx_integration.md)** — conversion API, chunk streams, and DataLoader
+- **[Using Nx](docs/guides/getting_started.md#using-nx)**: what Nx is, when it fits, and how tensors and Zarr chunks exchange bytes
+- **[Nx Integration](docs/guides/nx_integration.md)**: conversion API, chunk streams, and DataLoader
   - Converting between Nx tensors and Zarr arrays
   - Machine learning workflows
   - Streaming large arrays

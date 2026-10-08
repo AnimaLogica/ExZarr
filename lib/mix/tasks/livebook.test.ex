@@ -6,6 +6,15 @@ defmodule Mix.Tasks.Livebook.Test do
   @moduledoc """
   Discovers .livemd files, extracts elixir fenced blocks, writes a temp .exs, and runs it.
 
+  Cells are evaluated one at a time, in order, carrying variable bindings and
+  the environment (aliases, imports, requires) forward, the way Livebook does.
+  Code in later cells is compiled only after earlier cells ran, so a struct from
+  a package installed by the setup cell's `Mix.install/2` can be used.
+
+  By default the notebooks install `ex_zarr` from Hex, as a reader would. Pass
+  `--local` to point `{:ex_zarr, "~> ..."}` at this checkout instead, so CI
+  tests the notebooks against the code being changed.
+
   Why this exists:
   - No dependency on Livebook
   - CI-friendly
@@ -17,6 +26,7 @@ defmodule Mix.Tasks.Livebook.Test do
     mix livebook.test --pattern ExZarr --max 4 --timeout 300
     mix livebook.test --fail-on-warn
     mix livebook.test --skip-tag "livebook:test skip"
+    mix livebook.test --local
   """
 
   @default_paths ["docs/livebooks/**/*.livemd", "docs/**/*.livemd"]
@@ -36,7 +46,8 @@ defmodule Mix.Tasks.Livebook.Test do
           max: :integer,
           timeout: :integer,
           fail_on_warn: :boolean,
-          skip_tag: :string
+          skip_tag: :string,
+          local: :boolean
         ],
         aliases: [p: :paths]
       )
@@ -56,6 +67,7 @@ defmodule Mix.Tasks.Livebook.Test do
     timeout_sec = Keyword.get(opts, :timeout, @default_timeout_sec)
     fail_on_warn? = Keyword.get(opts, :fail_on_warn, false)
     skip_tag = Keyword.get(opts, :skip_tag, "livebook:test skip")
+    local? = Keyword.get(opts, :local, false)
 
     files =
       patterns
@@ -76,7 +88,7 @@ defmodule Mix.Tasks.Livebook.Test do
     results =
       files
       |> Task.async_stream(
-        fn path -> run_one(path, timeout_sec, fail_on_warn?, skip_tag) end,
+        fn path -> run_one(path, timeout_sec, fail_on_warn?, skip_tag, local?) end,
         max_concurrency: max_conc,
         timeout: (timeout_sec + 30) * 1_000,
         ordered: true
@@ -101,13 +113,13 @@ defmodule Mix.Tasks.Livebook.Test do
   defp maybe_filter(files, nil), do: files
   defp maybe_filter(files, pat), do: Enum.filter(files, &String.contains?(&1, pat))
 
-  defp run_one(path, _timeout_sec, fail_on_warn?, skip_tag) do
+  defp run_one(path, _timeout_sec, fail_on_warn?, skip_tag, local?) do
     livemd = File.read!(path)
 
     if skip_entire_notebook?(livemd, skip_tag) do
       {:ok, %{path: path, skipped: true}}
     else
-      script = __MODULE__.LivemdExtract.to_elixir_script(livemd)
+      script = __MODULE__.LivemdExtract.to_elixir_script(livemd, local: local?)
 
       if blank?(script) do
         {:error,
@@ -151,9 +163,13 @@ defmodule Mix.Tasks.Livebook.Test do
     Mix.shell().error("❌ FAIL  #{path} (#{inspect(status)})\n#{truncate(out)}\n")
   end
 
+  # Keeps the end of the output, where the failing cell and error are.
   defp truncate(s) when is_binary(s) do
     max = 12_000
-    if byte_size(s) > max, do: binary_part(s, 0, max) <> "\n…(truncated)", else: s
+
+    if byte_size(s) > max,
+      do: "…(truncated)\n" <> binary_part(s, byte_size(s) - max, max),
+      else: s
   end
 
   defp tmp_script_path(path) do
@@ -189,22 +205,47 @@ defmodule Mix.Tasks.Livebook.Test do
     # ```
     @elixir_fence ~r/```elixir\s*\n(.*?)```/ms
 
-    def to_elixir_script(livemd) when is_binary(livemd) do
-      @elixir_fence
-      |> Regex.scan(livemd, capture: :all_but_first)
-      |> List.flatten()
-      |> Enum.map(&String.trim_trailing/1)
-      |> Enum.reject(&(String.trim(&1) == ""))
-      |> Enum.join("\n\n")
-      |> then(&wrap_header/1)
+    def to_elixir_script(livemd, opts \\ []) when is_binary(livemd) do
+      cells =
+        @elixir_fence
+        |> Regex.scan(livemd, capture: :all_but_first)
+        |> List.flatten()
+        |> Enum.map(&String.trim_trailing/1)
+        |> Enum.reject(&(String.trim(&1) == ""))
+        |> Enum.map(&rewrite_paths(&1, Keyword.get(opts, :local, false)))
+
+      if cells == [], do: "", else: runner_script(cells)
     end
 
-    defp wrap_header(body) do
-      # Replace path-based Mix.install with absolute path to project root
+    # Each cell is quoted and evaluated with the binding and env left by the
+    # previous cell, so later cells compile after earlier ones ran.
+    defp runner_script(cells) do
+      """
+      # Generated from .livemd by mix livebook.test
+      # NOTE: Only ```elixir fenced blocks are executed, one cell at a time.
+      cells = #{inspect(cells, limit: :infinity, printable_limit: :infinity)}
+
+      cells
+      |> Enum.with_index(1)
+      |> Enum.reduce({[], Code.env_for_eval([])}, fn {code, index}, {binding, env} ->
+        try do
+          quoted = Code.string_to_quoted!(code, file: "cell \#{index}")
+          {_value, binding, env} = Code.eval_quoted_with_env(quoted, binding, env)
+          {binding, env}
+        rescue
+          error ->
+            IO.puts("livebook cell \#{index} failed:")
+            reraise error, __STACKTRACE__
+        end
+      end)
+      """
+    end
+
+    defp rewrite_paths(code, local?) do
       project_root = File.cwd!()
 
-      body_fixed =
-        body
+      code =
+        code
         |> String.replace(
           ~r/path: Path\.join\(__DIR__, "\.\.\/\.\.\/\.\."\)/,
           "path: \"#{project_root}\""
@@ -216,12 +257,15 @@ defmodule Mix.Tasks.Livebook.Test do
         |> String.replace(~r/path: Path\.join\(__DIR__, "\.\."\)/, "path: \"#{project_root}\"")
         |> String.replace(~r/path: Path\.dirname\(__DIR__\)/, "path: \"#{project_root}\"")
 
-      """
-      # Generated from .livemd by mix livebook.test
-      # NOTE: Only ```elixir fenced blocks are executed.
-      #
-      #{body_fixed}
-      """
+      if local? do
+        String.replace(
+          code,
+          ~r/^(\s*)\{:ex_zarr, "~> [^"]+"\}/m,
+          "\\1{:ex_zarr, path: \"#{project_root}\"}"
+        )
+      else
+        code
+      end
     end
   end
 end

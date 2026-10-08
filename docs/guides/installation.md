@@ -209,8 +209,8 @@ failed (offline build, proxy) or the platform has no precompiled binary.
    # config/config.exs
    config :rustler_precompiled, :force_build, ex_codecs: true
    ```
-3. Meanwhile `:zlib` and `:gzip` keep working; they use Erlang's built-in
-   `:zlib`.
+3. Meanwhile `:zlib` (and `:gzip` on Zarr v3 arrays) keep working; they use
+   Erlang's built-in `:zlib`.
 
 ### Issue: Permission Denied Errors
 

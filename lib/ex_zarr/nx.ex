@@ -7,10 +7,11 @@ defmodule ExZarr.Nx do
 
   ## Performance
 
-  Direct binary conversion is **5-10x faster** than nested tuple approach:
-
-  - **Optimized (this module)**: 10-20ms for 8MB (400-800 MB/s)
-  - **Nested tuples**: 80-150ms for 8MB (50-100 MB/s)
+  Conversion goes through one binary instead of nested lists. Chunk
+  decompression is usually the largest cost: for an 8 MB float64 array in
+  memory storage on an Apple M1 Max, `to_tensor/2` took about 75 ms
+  uncompressed and 117 ms with the default zlib. Building nested lists instead
+  adds roughly 100 to 400 ms for the same array.
 
   ## Usage
 
@@ -112,10 +113,10 @@ defmodule ExZarr.Nx do
 
   ## Performance
 
-  Conversion time scales linearly with array size:
-  - 1 MB: ~2ms
-  - 10 MB: ~15ms
-  - 100 MB: ~150ms
+  Conversion time scales linearly with array size and is dominated by chunk
+  decompression. Measured on an Apple M1 Max for an 8 MB float64 array in
+  memory storage: about 75 ms uncompressed, 87 ms with zstd, and 117 ms with
+  the default zlib.
 
   For arrays larger than available RAM, use `to_tensor_chunked/3` instead.
 
@@ -136,25 +137,11 @@ defmodule ExZarr.Nx do
   def to_tensor(%Array{} = array, opts \\ []) do
     with {:ok, binary} <- Array.to_binary(array),
          {:ok, nx_type} <- zarr_to_nx_type(array.metadata.dtype) do
-      # Create tensor from binary (1D)
-      tensor = Nx.from_binary(binary, nx_type)
-
-      # Reshape to original array shape
-      tensor = Nx.reshape(tensor, array.metadata.shape)
-
-      # Apply axis names if provided
       tensor =
-        case Keyword.get(opts, :names) do
-          nil -> tensor
-          names -> Nx.rename(tensor, names)
-        end
-
-      # Transfer to backend if specified
-      tensor =
-        case Keyword.get(opts, :backend) do
-          nil -> tensor
-          backend -> Nx.backend_transfer(tensor, backend)
-        end
+        binary
+        |> Nx.from_binary(nx_type)
+        |> Nx.reshape(array.metadata.shape)
+        |> apply_tensor_opts(opts)
 
       {:ok, tensor}
     end
@@ -263,8 +250,17 @@ defmodule ExZarr.Nx do
   `:metadata` is forced on internally so edge-chunk shapes are known; the
   stream still yields `{:ok, tensor}` or `{:error, reason}`, not chunk maps.
 
-  `:on_error` behaves like `stream_chunks/2`: `:skip` drops failed chunks,
-  `:halt` raises `ExZarr.StreamError`.
+  `:on_error` behaves like `stream_chunks/2`: `:skip` (the default) drops failed
+  chunks without yielding anything for them, `:halt` raises `ExZarr.StreamError`,
+  and a two-arity function is called with the failing index. Use `:halt` when a
+  silently missing chunk would make a result wrong, for example a total.
+
+  Without `:include_missing`, only chunks that exist in storage are yielded.
+  Pass `include_missing: true` to also get never-written chunks, filled with the
+  array's fill value.
+
+  When the array dtype has no Nx equivalent, the stream yields a single
+  `{:error, reason}` and reads nothing.
 
   ## Examples
 
@@ -278,11 +274,16 @@ defmodule ExZarr.Nx do
           Enumerable.t({:ok, Nx.Tensor.t()} | {:error, term()})
   def stream_chunk_tensors(%Array{} = array, opts \\ []) do
     {tensor_opts, stream_opts} = Keyword.split(opts, [:backend, :names])
-    stream_opts = Keyword.put(stream_opts, :metadata, true)
 
-    array
-    |> Array.stream_chunks(stream_opts)
-    |> Stream.map(&chunk_event_to_tensor(array, &1, tensor_opts))
+    case zarr_to_nx_type(array.metadata.dtype) do
+      {:ok, nx_type} ->
+        array
+        |> Array.stream_chunks(Keyword.put(stream_opts, :metadata, true))
+        |> Stream.map(&chunk_event_to_tensor(array, nx_type, &1, tensor_opts))
+
+      {:error, _} = error ->
+        [error]
+    end
   end
 
   @doc """
@@ -326,18 +327,11 @@ defmodule ExZarr.Nx do
     Stream.map(chunk_ranges, fn {start, stop} ->
       with {:ok, binary} <- Array.get_slice(array, start: start, stop: stop),
            {:ok, nx_type} <- zarr_to_nx_type(array.metadata.dtype) do
-        # Calculate chunk shape
-        chunk_shape = calculate_chunk_shape(start, stop)
-
-        # Create tensor
-        tensor = Nx.from_binary(binary, nx_type) |> Nx.reshape(chunk_shape)
-
-        # Apply backend transfer if specified
         tensor =
-          case Keyword.get(opts, :backend) do
-            nil -> tensor
-            backend -> Nx.backend_transfer(tensor, backend)
-          end
+          binary
+          |> Nx.from_binary(nx_type)
+          |> Nx.reshape(calculate_chunk_shape(start, stop))
+          |> apply_tensor_opts(opts)
 
         {:ok, tensor}
       end
@@ -513,26 +507,15 @@ defmodule ExZarr.Nx do
     |> List.to_tuple()
   end
 
-  defp chunk_event_to_tensor(array, %{index: index, data: data}, opts)
+  # The event's metadata.shape is the nominal chunk shape; the in-bounds shape
+  # comes from the chunk bounds.
+  defp chunk_event_to_tensor(array, nx_type, %{index: index, data: data}, opts)
        when is_binary(data) do
-    binary_to_chunk_tensor(array, index, data, opts)
-  end
-
-  defp chunk_event_to_tensor(array, {index, data}, opts) when is_binary(data) do
-    binary_to_chunk_tensor(array, index, data, opts)
-  end
-
-  defp chunk_event_to_tensor(_array, other, _opts) do
-    {:error, {:unexpected_chunk_event, other}}
-  end
-
-  defp binary_to_chunk_tensor(array, index, data, opts) do
     {start_coords, stop_coords} = Array.get_chunk_bounds(array, index)
     shape = calculate_chunk_shape(start_coords, stop_coords)
-    nominal = array.chunks
 
-    with {:ok, nx_type} <- zarr_to_nx_type(array.metadata.dtype),
-         {:ok, payload} <- crop_chunk_binary(data, shape, nominal, Array.itemsize(array)) do
+    with {:ok, payload} <-
+           crop_chunk_binary(data, shape, array.chunks, Array.itemsize(array)) do
       tensor =
         payload
         |> Nx.from_binary(nx_type)
@@ -561,35 +544,39 @@ defmodule ExZarr.Nx do
     end
   end
 
+  # Copies the in-bounds region of a padded chunk. In C order, the dimensions
+  # after the last cropped one span the whole chunk, so from that dimension on
+  # each region row is one contiguous run. Cropping only the first dimension is
+  # a single binary_part/3.
   defp extract_logical_chunk(data, shape, nominal, itemsize) do
-    strides = chunk_strides(nominal)
+    dims = Tuple.to_list(shape)
+    nominal_dims = Tuple.to_list(nominal)
 
-    shape
-    |> tuple_coordinates()
+    {_, split} =
+      Enum.zip(dims, nominal_dims)
+      |> Enum.with_index()
+      |> Enum.filter(fn {{dim, nom}, _} -> dim != nom end)
+      |> List.last()
+
+    {lead_dims, [run_first | _]} = Enum.split(dims, split)
+    lead_strides = nominal |> chunk_strides() |> Enum.take(split)
+    run_bytes = Enum.reduce(Enum.drop(nominal_dims, split + 1), run_first, &*/2) * itemsize
+
+    lead_dims
+    |> Enum.map(&Range.new(0, &1 - 1, 1))
+    |> cartesian_product()
     |> Enum.map(fn coord ->
-      offset = flat_offset(coord, strides) * itemsize
-      binary_part(data, offset, itemsize)
+      binary_part(data, flat_offset(coord, lead_strides) * itemsize, run_bytes)
     end)
     |> IO.iodata_to_binary()
   end
 
   defp chunk_strides(shape) do
-    dims = Tuple.to_list(shape)
-
-    dims
-    |> Enum.reverse()
-    |> Enum.reduce({[], 1}, fn dim, {acc, stride} ->
-      {[stride | acc], stride * dim}
-    end)
-    |> elem(0)
-  end
-
-  defp tuple_coordinates(shape) do
     shape
     |> Tuple.to_list()
-    |> Enum.map(&(&1 - 1))
-    |> Enum.map(&Range.new(0, &1))
-    |> cartesian_product()
+    |> Enum.reverse()
+    |> Enum.reduce({[], 1}, fn dim, {acc, stride} -> {[stride | acc], stride * dim} end)
+    |> elem(0)
   end
 
   defp flat_offset(coord, strides) do
@@ -601,7 +588,11 @@ defmodule ExZarr.Nx do
     shape |> Tuple.to_list() |> Enum.reduce(1, &*/2)
   end
 
-  defp apply_tensor_opts(tensor, opts) do
+  @doc false
+  # Applies the `:names` and `:backend` options shared by every conversion in
+  # this module and in `ExZarr.Nx.DataLoader`.
+  @spec apply_tensor_opts(Nx.Tensor.t(), keyword()) :: Nx.Tensor.t()
+  def apply_tensor_opts(tensor, opts) do
     tensor =
       case Keyword.get(opts, :names) do
         nil -> tensor

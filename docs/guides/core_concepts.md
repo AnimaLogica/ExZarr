@@ -357,7 +357,7 @@ Codecs transform chunk data before storage. This includes compression (reduce si
 
 **Compression codecs** (reduce size):
 - `:zlib` - Standard compression (Erlang built-in, always available)
-- `:gzip` - Compatible with gzip tools (Erlang built-in)
+- `:gzip` - Compatible with gzip tools (Erlang built-in; Zarr v3 arrays only, use `:zlib` for v2)
 - `:zstd` - Fast compression with excellent ratio
 - `:lz4` - Very fast compression, lower ratio
 - `:blosc` - Shuffle filters plus an inner compressor; strong on numeric data

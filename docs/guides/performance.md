@@ -315,7 +315,7 @@ Data integrity critical (checksums required)?
   → Add crc32c codec to pipeline
 
 Data already compressed (images, video)?
-  → Use no compression (compressor: nil)
+  → Use no compression (compressor: :none)
 ```
 
 ### Compression Level Tuning

@@ -4,7 +4,7 @@ This guide shows how to integrate ExZarr with Nx (Numerical Elixir) for numerica
 
 For what Nx is, when to use the bridge, and how tensor bytes relate to Zarr chunks, start with [Using Nx](getting_started.md#using-nx) in the getting started guide. This page is the API: conversion, chunk streams, and DataLoader.
 
-** Performance Note:** ExZarr provides an optimized `ExZarr.Nx` module with **5-10x faster** conversion compared to manual approaches. Always use `ExZarr.Nx` for best performance.
+**Performance note:** `ExZarr.Nx` converts through one binary instead of nested lists, so it skips the cost of building and walking millions of list cells. Measured numbers are in [Optimized Conversion](#optimized-conversion-recommended).
 
 ## Table of Contents
 
@@ -42,7 +42,7 @@ tensor = Nx.iota({1000, 1000})
 )
 ```
 
-**Performance:** 10-20ms for 8MB (400-800 MB/s)
+**Performance:** an 8 MB float64 array converts in tens of milliseconds without compression; codec choice dominates. See the table under [Optimized Conversion](#optimized-conversion-recommended).
 
 ## Nx and ExZarr Overview
 
@@ -89,12 +89,19 @@ ExZarr provides the `ExZarr.Nx` module for efficient conversion using direct bin
 
 ### Performance Comparison
 
-| Approach | Time (8MB) | Throughput | Status |
-|----------|-----------|------------|---------|
-| **`ExZarr.Nx` (optimized)** | **10-20ms** | **400-800 MB/s** | **Recommended** |
-| Nested tuples (legacy) | 80-150ms | 50-100 MB/s | Deprecated |
+Measured on an Apple M1 Max: a `{1000, 1000}` float64 array (8 MB), chunks
+`{100, 100}`, memory storage, median of seven runs.
 
-**Speedup: 5-10x faster**
+| Compressor | `to_tensor/2` | `from_tensor/2` |
+|------------|---------------|-----------------|
+| `:none` | 75 ms | 50 ms |
+| `:zstd` | 87 ms | 98 ms |
+| `:zlib` (the default) | 117 ms | 640 ms |
+
+The legacy nested-list path does the same storage work and adds the list
+conversion on top: about 400 ms for `Nx.to_list/1` on the write side and about
+100 ms for `Nx.tensor/2` on the read side for this array. Compression is the
+largest cost, so choose the codec before tuning anything else.
 
 ### Converting ExZarr to Nx
 
@@ -397,9 +404,12 @@ trained_state =
 ### Chunk-aligned reduction
 
 ```elixir
+# include_missing: never-written chunks count as the fill value.
+# on_error: :halt: a chunk that fails to read stops the sum instead of
+# silently leaving it out.
 sums =
   array
-  |> ExZarr.Nx.stream_chunk_tensors(concurrency: 4, on_error: :skip)
+  |> ExZarr.Nx.stream_chunk_tensors(concurrency: 4, include_missing: true, on_error: :halt)
   |> Enum.map(fn {:ok, tensor} -> Nx.sum(tensor) |> Nx.to_number() end)
 
 total = Enum.sum(sums)
@@ -723,7 +733,7 @@ result = tensor
 
 **Problem**: Conversion requires copying data (binary → tensor).
 
-**Impact**: ~10-20ms overhead per 8MB.
+**Impact**: one copy of the data; for 8 MB, tens of milliseconds (see the table under [Optimized Conversion](#optimized-conversion-recommended)).
 
 **Workarounds:**
 1. Process in chunks (amortize overhead)
@@ -805,7 +815,7 @@ end
 
 ### WARNING: Deprecated: Nested Tuple Conversion
 
-**Note:** This approach is **5-10x slower** than `ExZarr.Nx`. Only use for compatibility with old code.
+**Note:** This approach is slower than `ExZarr.Nx` because it builds nested lists (see the measurements above). Only use it for compatibility with old code.
 
 <details>
 <summary>Click to expand legacy nested tuple approach</summary>
@@ -817,7 +827,7 @@ defmodule ExZarr.Nx.LegacyHelpers do
   @moduledoc """
   Legacy conversion helpers using nested tuples.
 
-  WARNING: DEPRECATED: Use ExZarr.Nx module instead (5-10x faster).
+  WARNING: DEPRECATED: Use the ExZarr.Nx module instead.
   """
 
   def nested_list_to_tuple(list) when is_list(list) do
@@ -839,7 +849,7 @@ end
 #### Legacy Write Pattern
 
 ```elixir
-# WARNING: SLOW: 80-150ms for 8MB
+# WARNING: SLOW: adds a nested-list conversion on top of the storage work
 tensor = Nx.iota({1000, 1000})
 
 {:ok, array} = ExZarr.create(
@@ -864,7 +874,7 @@ data = tensor
 #### Legacy Read Pattern
 
 ```elixir
-# WARNING: SLOW: 80-150ms for 8MB
+# WARNING: SLOW: adds a nested-list conversion on top of the storage work
 {:ok, array} = ExZarr.open(path: "/data/array")
 
 {:ok, data} = ExZarr.Array.get_slice(array,
@@ -885,13 +895,12 @@ tensor = data
 
 ExZarr provides first-class Nx integration via the `ExZarr.Nx` module:
 
-**5-10x faster** than manual conversion (400-800 MB/s vs 50-100 MB/s)
+**No nested lists** - conversion goes through one binary
 **Simple API** - Single function calls for conversion
 **Full type support** - All 10 standard numeric types
 **Chunked processing** - Constant memory for large arrays
 **Backend agnostic** - Works with CPU, EXLA, Torchx
 **ML-ready** - Efficient batch loading, checkpointing
-**Production-tested** - Used in real-world workflows
 
 **Next steps:**
 - Try the example: `elixir examples/nx_optimized_conversion.exs`

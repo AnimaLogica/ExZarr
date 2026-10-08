@@ -182,6 +182,43 @@ jobs:
           echo "Checking for undocumented public functions..."
           mix docs --warnings-as-errors
 
+  livebooks:
+    name: Livebooks
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.5"
+          otp-version: "28.1"
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-livebooks-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-livebooks-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Runs every shipped notebook cell by cell against this checkout, so a
+      # change that breaks a livebook fails here rather than after release.
+      - name: Run livebooks
+        run: >-
+          mix livebook.test --local --max 2 --timeout 900
+          --paths "docs/livebooks/0[1-6]*/*.livemd"
+          --paths docs/livebooks/nx_streaming.livemd
+
   python-interop:
     name: Python Interop (zarr ${{ matrix.zarr }})
     runs-on: ubuntu-latest
