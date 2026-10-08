@@ -7,7 +7,13 @@ small livebook set you can run from the repo.
 
 ExZarr remains a dense chunked array and group store. Columnar batches belong
 in [ex_arrow](https://hex.pm/packages/ex_arrow). Binsparse groups belong in
-ex_graphblas.
+[ex_graphblas](https://hex.pm/packages/ex_graphblas).
+
+### Scope change
+
+Explorer direct streaming was planned for 1.3 and is not included. Explorer
+works on columnar data, which is ex_arrow's job, so it will not be added to
+ExZarr.
 
 ## Highlights
 
@@ -24,8 +30,8 @@ array
 |> Enum.map(fn {:ok, tensor} -> Nx.sum(tensor) end)
 ```
 
-`:concurrency`, `:ordered`, `:on_error`, `:filter`, and `:include_missing`
-are the streaming options. `:backend` and `:names` apply to the tensors.
+`:concurrency`, `:ordered`, `:timeout`, `:on_error`, `:filter`, and
+`:include_missing` are the streaming options. `:backend` and `:names` apply to the tensors.
 
 ### Batches
 

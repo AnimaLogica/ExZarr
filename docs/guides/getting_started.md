@@ -471,7 +471,7 @@ Skip it when the access pattern is a few scalar lookups. A Zarr read loads a chu
 
 Skip it for `{:bf, 16}`, `{:f, 16}`, and complex tensors. Those types are not in the Zarr dtypes ExZarr stores. Keep float32 on disk and cast after `to_tensor/2`.
 
-### Quick Guide to Nx functionality
+### Nx functions at a glance
 
 | Function | What you get |
 | --- | --- |
@@ -495,7 +495,7 @@ array
 
 The livebooks under `docs/livebooks/03_nx_ml/` and `docs/livebooks/nx_streaming.livemd` run these calls. The rest of the API is in the [Nx integration guide](nx_integration.md).
 
-### Deep Dive in how data is stored in Nx versus Zarr and how we exchange data between the two
+### How data moves between Nx and Zarr
 
 An Nx tensor is one buffer. For `Nx.iota({6, 4}, type: {:f, 32})` that buffer is `6 * 4 * 4` bytes, row-major (C order), with the shape stored beside the binary. Names and the backend are metadata in the tensor struct. Nothing is compressed. Nothing is split into files.
 

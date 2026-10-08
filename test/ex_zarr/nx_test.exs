@@ -236,6 +236,148 @@ defmodule ExZarr.NxTest do
       end
     end
 
+    describe "stream_chunk_tensors/2 options and edges" do
+      defp iota_array(shape, chunks, opts \\ []) do
+        {:ok, array} =
+          ExZarr.create([shape: shape, chunks: chunks, dtype: :float32, storage: :memory] ++ opts)
+
+        start = List.to_tuple(List.duplicate(0, tuple_size(shape)))
+        data = Nx.iota(shape, type: {:f, 32}) |> Nx.to_binary()
+        :ok = ExZarr.Array.set_slice(array, data, start: start, stop: shape)
+        array
+      end
+
+      # Every chunk tensor must equal the same region of to_tensor/2.
+      defp assert_chunks_match_whole(array, opts \\ []) do
+        {:ok, whole} = ExZarrNx.to_tensor(array)
+
+        expected =
+          array
+          |> ExZarr.Array.stream_chunks(metadata: true)
+          |> Enum.map(fn %{index: index} ->
+            {start, stop} = ExZarr.Array.get_chunk_bounds(array, index)
+            starts = Tuple.to_list(start)
+            lengths = Enum.zip_with(starts, Tuple.to_list(stop), &(&2 - &1))
+            whole |> Nx.slice(starts, lengths) |> Nx.to_flat_list()
+          end)
+
+        actual =
+          array
+          |> ExZarrNx.stream_chunk_tensors(opts)
+          |> Enum.map(fn {:ok, tensor} -> Nx.to_flat_list(tensor) end)
+
+        assert Enum.sort(actual) == Enum.sort(expected)
+        assert length(actual) == length(expected)
+      end
+
+      test "crops edge chunks on every axis in 3D and 4D" do
+        assert_chunks_match_whole(iota_array({5, 7, 3}, {2, 3, 2}))
+        assert_chunks_match_whole(iota_array({3, 4, 5, 2}, {2, 3, 2, 2}))
+        assert_chunks_match_whole(iota_array({4, 6}, {4, 4}))
+      end
+
+      test "unordered concurrent reads yield the right data for every chunk" do
+        assert_chunks_match_whole(iota_array({9, 9}, {2, 4}), concurrency: 4, ordered: false)
+      end
+
+      test "include_missing yields fill-valued tensors cropped to the array bounds" do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {3, 3},
+            chunks: {2, 2},
+            dtype: :int32,
+            fill_value: 7,
+            storage: :memory
+          )
+
+        :ok = ExZarr.Array.set_slice(array, <<1::32-signed-little>>, start: {0, 0}, stop: {1, 1})
+
+        stored = array |> ExZarrNx.stream_chunk_tensors() |> Enum.to_list()
+        assert [{:ok, only}] = stored
+        assert Nx.to_flat_list(only) == [1, 7, 7, 7]
+
+        all =
+          array
+          |> ExZarrNx.stream_chunk_tensors(include_missing: true)
+          |> Enum.map(fn {:ok, tensor} -> {Nx.shape(tensor), Nx.to_flat_list(tensor)} end)
+
+        assert all == [{{2, 2}, [1, 7, 7, 7]}, {{2, 1}, [7, 7]}, {{1, 2}, [7, 7]}, {{1, 1}, [7]}]
+      end
+
+      test "an unsupported dtype yields one error and reads nothing" do
+        {:ok, array} = ExZarr.create(shape: {6}, chunks: {2}, dtype: :bool, storage: :memory)
+
+        assert [{:error, message}] =
+                 array |> ExZarrNx.stream_chunk_tensors(include_missing: true) |> Enum.to_list()
+
+        assert message =~ "Unsupported dtype"
+      end
+
+      test "applies the :backend option to each tensor" do
+        tensors =
+          {4}
+          |> iota_array({2})
+          |> ExZarrNx.stream_chunk_tensors(backend: Nx.BinaryBackend)
+          |> Enum.map(fn {:ok, tensor} -> tensor end)
+
+        assert Enum.all?(tensors, &match?(%Nx.Tensor{data: %Nx.BinaryBackend{}}, &1))
+      end
+
+      @tag :tmp_dir
+      test "on_error :skip drops an unreadable chunk and :halt raises", %{tmp_dir: tmp_dir} do
+        path = Path.join(tmp_dir, "corrupt")
+
+        {:ok, array} =
+          ExZarr.create(
+            shape: {6},
+            chunks: {2},
+            dtype: :int32,
+            storage: :filesystem,
+            path: path,
+            compressor: :zlib
+          )
+
+        data = for i <- 0..5, into: <<>>, do: <<i::32-signed-little>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {6})
+
+        [chunk_file | _] =
+          path |> File.ls!() |> Enum.reject(&String.starts_with?(&1, ".")) |> Enum.sort()
+
+        File.write!(Path.join(path, chunk_file), "not zlib data")
+
+        skipped = array |> ExZarrNx.stream_chunk_tensors(on_error: :skip) |> Enum.to_list()
+        assert length(skipped) == 2
+
+        assert_raise ExZarr.StreamError, fn ->
+          array |> ExZarrNx.stream_chunk_tensors(on_error: :halt) |> Enum.to_list()
+        end
+      end
+
+      @tag :performance
+      test "cropping a large padded edge chunk is fast" do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {1999, 1000},
+            chunks: {1000, 1000},
+            dtype: :float32,
+            storage: :memory,
+            compressor: :none
+          )
+
+        data = :binary.copy(<<0::32>>, 1999 * 1000)
+        :ok = ExZarr.Array.set_slice(array, data, start: {0, 0}, stop: {1999, 1000})
+
+        {microseconds, [{:ok, tensor}]} =
+          :timer.tc(fn ->
+            array |> ExZarrNx.stream_chunk_tensors(filter: &(&1 == {1, 0})) |> Enum.to_list()
+          end)
+
+        assert Nx.shape(tensor) == {999, 1000}
+        # The per-element crop in 1.3.0 took about 300 ms here; a row copy is ~1 ms.
+        assert microseconds < 100_000
+      end
+    end
+
     describe "to_tensor/2 - with options" do
       test "converts tensor with axis names" do
         {:ok, array} =

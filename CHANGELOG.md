@@ -7,9 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `ExZarr.Nx.stream_chunk_tensors/2` crops padded edge chunks with one
+  contiguous copy per row instead of one copy per element. A 999x1000 float32
+  edge chunk went from about 300 ms to under 1 ms.
+- `stream_chunk_tensors/2` on an array whose dtype has no Nx type now yields a
+  single `{:error, reason}` and reads nothing, instead of one error per chunk.
+- `DataLoader.shuffled_batch_stream/3` and `paired_shuffled_batch_stream/4`
+  group shuffled indices in one pass. Slicing the index list per batch was
+  quadratic in the sample count (about 1 s of indexing at 200,000 samples).
+  A short final batch is no longer read when `drop_remainder: true` drops it.
+- Shuffling no longer reseeds the caller's `:rand` state, with or without
+  `:seed`. A given `:seed` still produces the same order as 1.3.0.
+- `to_tensor_chunked/3` now applies `:names`, like `to_tensor/2`.
+- Livebooks: `01_04_codecs_and_pipelines` no longer uses `:gzip` with Zarr v2
+  (gzip is a Zarr v3 codec; v2 uses `:zlib`) or `compressor: nil` (use
+  `:none`). `03_03_training_from_zarr` uses an independent second feature,
+  zero-initialized weights and Adam, so it reliably learns the line, and uses
+  Axon 0.8's `Axon.ModelState`.
+- Guides no longer say `:gzip` always works; it is accepted for Zarr v3 arrays.
+
+### Changed
+- `mix livebook.test` evaluates notebook cells one at a time with bindings and
+  environment carried forward, like Livebook, names the failing cell, and keeps
+  the end of long output. `--local` runs notebooks against this checkout
+  instead of the Hex release. CI runs `mix livebook.test --local`.
+
 ## [1.3.0] - 2026-10-08
 
-### Data Science Interop
+Data science interop for dense arrays.
+
+Not included, although planned for 1.3: Explorer direct streaming. Columnar
+data and Explorer integration belong in [ex_arrow](https://hex.pm/packages/ex_arrow);
+Binsparse belongs in [ex_graphblas](https://hex.pm/packages/ex_graphblas).
 
 ### Added
 - `ExZarr.Nx.stream_chunk_tensors/2` maps `Array.stream_chunks/2` to Nx tensors.

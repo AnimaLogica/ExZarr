@@ -111,8 +111,8 @@ ExCodecs publishes binaries for macOS (Apple Silicon and Intel), Linux
 (x86_64 and aarch64, glibc and musl) and Windows (x86_64). If its NIF cannot
 load, ExZarr does not silently switch codecs: `ExZarr.Codecs.available_codecs/0`
 lists only `:none` and `:zlib`, and compressing with another codec returns
-`{:error, {:unsupported_codec, codec}}` or a compression error. `:zlib` and
-`:gzip` always work.
+`{:error, {:unsupported_codec, codec}}` or a compression error. `:zlib` always
+works, and so does `:gzip` on Zarr v3 arrays.
 
 ### NIF Safety
 

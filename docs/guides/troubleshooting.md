@@ -1011,7 +1011,7 @@ python3 -c "import zarr; z = zarr.open('/path/to/array', mode='r'); print(z.info
    ```elixir
    # Python zarr always supports zlib/gzip
    compressor: :zlib
-   # Or
+   # Or, for a Zarr v3 array
    compressor: :gzip
    ```
 

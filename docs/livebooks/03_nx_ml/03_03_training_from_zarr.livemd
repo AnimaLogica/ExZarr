@@ -5,7 +5,8 @@ Mix.install([
   {:ex_zarr, "~> 1.3"},
   # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
   {:nx, "~> 0.7"},
-  {:axon, "~> 0.7"} # Axon is installed only in this notebook. ExZarr does not depend on it.
+  # Axon is installed only in this notebook. ExZarr does not depend on it.
+  {:axon, "~> 0.8"}
 ])
 ```
 
@@ -13,30 +14,34 @@ Mix.install([
 
 This notebook trains a one-layer model on data that lives in ExZarr arrays.
 
-The labels are a straight line of the first feature: for sample `i`, `y = 2 * x0 + 1`. The second feature is present in the array and is not used by that formula. The model has to learn which column matters.
+The labels are a straight line of the first feature: for sample `i`, `y = 2 * x0 + 1`. The second feature is stored in the array but plays no part in that formula, and it does not follow the first feature, so the model has to learn to ignore it.
 
-Training never loads all 64 rows at once. `ExZarr.Nx.DataLoader` reads 16 samples at a time, which is also the chunk size, and Axon takes one gradient step per batch.
+The training loop never holds more than one batch: `ExZarr.Nx.DataLoader` reads 16 samples at a time, which is also the chunk size, and Axon takes one gradient step per batch.
 
 ## Write the line into two arrays
 
 There are 64 samples. Each feature row is two float32 numbers:
 
 * column 0: `i * 0.05`
-* column 1: `(i + 1) * 0.05`
+* column 1: `rem(i * 7, 13) * 0.1`, a repeating pattern unrelated to column 0 and to the target
 
-The target for that row is `2 * (i * 0.05) + 1`, which is `2 * x0 + 1`. Sample 0 is features `[0.0, 0.05]` and target `1.0`. Sample 1 is `[0.05, 0.10]` and target `1.1`.
+The target for that row is `2 * (i * 0.05) + 1`, which is `2 * x0 + 1`. Sample 0 is features `[0.0, 0.0]` and target `1.0`. Sample 1 is `[0.05, 0.7]` and target `1.1`.
 
-Both arrays use chunks of 16 along the sample axis, so the file is four chunks. The batch size below is also 16, so each training step reads exactly one chunk.
+Both arrays use chunks of 16 along the sample axis, so each array is four chunks. The batch size below is also 16, so each training step reads exactly one chunk.
 
 ```elixir
 alias ExZarr.Array
 
 n = 64
-features = for(i <- 0..(n - 1), j <- 0..1, into: <<>>, do: <<(i + j) * 0.05::float-little-32>>)
+
+features =
+  for i <- 0..(n - 1), into: <<>> do
+    <<i * 0.05::float-little-32, rem(i * 7, 13) * 0.1::float-little-32>>
+  end
 
 targets =
   for i <- 0..(n - 1), into: <<>> do
-    <<(2.0 * (i * 0.05) + 1.0)::float-little-32>>
+    <<2.0 * (i * 0.05) + 1.0::float-little-32>>
   end
 
 {:ok, x_array} =
@@ -48,45 +53,41 @@ targets =
 :ok = Array.set_slice(x_array, features, start: {0, 0}, stop: {n, 2})
 :ok = Array.set_slice(y_array, targets, start: {0, 0}, stop: {n, 1})
 
-{:ok, x0} = ExZarr.Nx.to_tensor(x_array)
-{:ok, y0} = ExZarr.Nx.to_tensor(y_array)
+{:ok, first_two} = Array.get_slice(x_array, start: {0, 0}, stop: {2, 2})
 
 %{
-  x_shape: Nx.shape(x0),
-  y_shape: Nx.shape(y0),
-  first_row: Nx.to_list(x0[0]),
-  first_target: y0[0][0] |> Nx.to_number()
+  x_shape: x_array.shape,
+  y_shape: y_array.shape,
+  first_rows: first_two |> Nx.from_binary({:f, 32}) |> Nx.reshape({2, 2}) |> Nx.to_list()
 }
 ```
 
-The map should show `x_shape: {64, 2}`, `y_shape: {64, 1}`, `first_row: [0.0, 0.05]`, and `first_target: 1.0`.
+The map shows `x_shape: {64, 2}`, `y_shape: {64, 1}`, and the first two feature rows, `[[0.0, 0.0], [0.05, 0.7]]` (float32 values print with extra digits, such as `0.05000000074505806` and `0.699999988079071`).
 
 ## One dense layer, batches of 16
 
 `Axon.input("features", shape: {nil, 2})` is the placeholder for a batch. `nil` means the number of rows can change. `2` is the two columns in `x_array`.
 
-`Axon.dense(1)` is one output number per row: `y_hat = w0 * x0 + w1 * x1 + b`. That is the whole model. Training changes `w0`, `w1`, and `b`. A good fit has `w0` near 2, `w1` near 0, and `b` near 1, because the labels ignore column 1.
+`Axon.dense(1)` is one output number per row: `y_hat = w0 * x0 + w1 * x1 + b`. That is the whole model. Training changes `w0`, `w1`, and `b`. The right answer is `w0 = 2`, `w1 = 0`, and `b = 1`, because the labels ignore column 1.
 
-`paired_batch_stream/4` reads the same row range from both arrays, so feature row `i` stays with target `i`. `drop_remainder: true` would drop a short final batch. Here 64 ÷ 16 is exact, so every batch is `{16, 2}` features and `{16, 1}` targets.
+The weights start at zero (`kernel_initializer: :zeros`, `bias_initializer: :zeros`) instead of random values. With the batches always in the same order, every run of this notebook prints the same numbers.
 
-Axon wants each item as `{inputs, targets}`. The inputs are a map whose key matches the input name `"features"`. `Nx.as_type/2` makes the dtype explicit before the training loop compiles.
+`paired_batch_stream/4` reads the same row range from both arrays, so feature row `i` stays with target `i`. `drop_remainder: true` would drop a short final batch. Here 64 / 16 is exact, so every batch is `{16, 2}` features and `{16, 1}` targets.
+
+Axon wants each item as `{inputs, targets}`. The inputs are a map whose key matches the input name `"features"`.
 
 ```elixir
 model =
   Axon.input("features", shape: {nil, 2})
-  |> Axon.dense(1)
+  |> Axon.dense(1, kernel_initializer: :zeros, bias_initializer: :zeros)
 
 batches =
   ExZarr.Nx.DataLoader.paired_batch_stream(x_array, y_array, 16, drop_remainder: true)
-  |> Stream.map(fn {:ok, {x, y}} ->
-    {Nx.as_type(x, {:f, 32}), Nx.as_type(y, {:f, 32})}
-  end)
-  |> Stream.map(fn {x, y} -> {%{"features" => x}, y} end)
+  |> Stream.map(fn {:ok, {x, y}} -> {%{"features" => x}, y} end)
 
 {first_inputs, first_targets} = batches |> Enum.take(1) |> hd()
 
 %{
-  model: model,
   batch_x: Nx.shape(first_inputs["features"]),
   batch_y: Nx.shape(first_targets)
 }
@@ -94,33 +95,35 @@ batches =
 
 You should see batch shapes `{16, 2}` and `{16, 1}`.
 
-## Twelve gradient steps, then two predictions
+## Train, then check the weights and two predictions
 
-`Axon.Loop.trainer/3` builds a loop that minimizes mean squared error with stochastic gradient descent. Mean squared error is the average of `(y_hat - y)²` over the batch. Each step nudges the three parameters to make that number smaller.
+`Axon.Loop.trainer/3` builds a loop that minimizes mean squared error, the average of `(y_hat - y)²` over the batch. The Adam optimizer with a learning rate of 0.1 adjusts the three parameters after every batch to make that number smaller.
 
-`epochs: 3` walks the data three times. `iterations: 4` stops each pass after four batches, which is the whole dataset (64 / 16). That is 12 updates, starting from Axon's random initial weights. This is a demonstration that the batches are readable, not a claim that the line is fully learned.
-
-`Axon.Loop.run/4` returns the trained parameters. Some Axon versions wrap them in `%Axon.Loop.State{}`. The `case` unwraps that so `Axon.predict/3` receives the model state either way.
+`epochs: 60` walks the four batches sixty times: 240 updates, each reading one chunk from each array. `Axon.Loop.run/4` starts from an empty `Axon.ModelState` and returns the trained one.
 
 The two probe rows are chosen from the formula, not from the stored array:
 
 * `[0.0, 0.0]` has `x0 = 0`, so the line says `y = 1`
 * `[1.0, 0.0]` has `x0 = 1`, so the line says `y = 3`
 
-After a dozen steps the printed numbers should sit closer to `1` and `3` than a random guess, and they will not match those targets exactly.
-
 ```elixir
-trainer = Axon.Loop.trainer(model, :mean_squared_error, :sgd)
+trainer =
+  Axon.Loop.trainer(model, :mean_squared_error, Polaris.Optimizers.adam(learning_rate: 0.1),
+    log: 0
+  )
 
-trained = Axon.Loop.run(trainer, batches, %{}, epochs: 3, iterations: 4)
+model_state = Axon.Loop.run(trainer, batches, Axon.ModelState.empty(), epochs: 60)
 
-model_state =
-  case trained do
-    %Axon.Loop.State{step_state: %{model_state: state}} -> state
-    state -> state
-  end
+round_list = fn tensor -> tensor |> Nx.to_flat_list() |> Enum.map(&Float.round(&1, 2)) end
 
-Axon.predict(model, model_state, %{"features" => Nx.tensor([[0.0, 0.0], [1.0, 0.0]])})
+predictions =
+  Axon.predict(model, model_state, %{"features" => Nx.tensor([[0.0, 0.0], [1.0, 0.0]])})
+
+%{
+  weights: round_list.(model_state.data["dense_0"]["kernel"]),
+  bias: round_list.(model_state.data["dense_0"]["bias"]),
+  predictions: round_list.(predictions)
+}
 ```
 
-The result is a `{2, 1}` tensor. Row 0 is the prediction for `x0 = 0`. Row 1 is the prediction for `x0 = 1`.
+The result is `weights: [2.0, 0.0]` (the second weight may print as `-0.0`), `bias: [1.0]`, and `predictions: [1.0, 3.0]`: the model learned the line and learned to ignore column 1, reading the data one chunk at a time from the Zarr arrays.

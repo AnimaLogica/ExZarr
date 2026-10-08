@@ -1,6 +1,6 @@
 # Roadmap
 
-## v1.2.0 — Zarr 3.1 Interoperability & Range-Aware Cloud I/O
+## v1.2.0 - Zarr 3.1 Interoperability & Range-Aware Cloud I/O
 
 Released 2026-10-04. Backward compatible with v1.1 (rewrite pre-1.2 private shards; OTP 26+).
 
@@ -16,7 +16,7 @@ Released 2026-10-04. Backward compatible with v1.1 (rewrite pre-1.2 private shar
 
 ---
 
-## v1.1.0 — BEAM-Native Streaming
+## v1.1.0 - BEAM-Native Streaming
 
 Released 2026-06-12. Backward compatible with v1.0.
 
@@ -26,18 +26,18 @@ Released 2026-06-12. Backward compatible with v1.0.
 
 ---
 
-## v1.3.0 — Data Science Interop
+## v1.3.0 - Data Science Interop
 
 Released 2026-10-08.
 
 - [x] `ExZarr.Nx.stream_chunk_tensors/2` (stored chunks → tensors, edge crops)
 - [x] DataLoader documented against its real shuffle (full index list)
 - [x] Livebook MVP: metadata, Zarr↔Nx, minibatches, Axon toy train
-- [x] Arrow/Explorer stay in ex_arrow; Binsparse stays in ex_graphblas
+- [ ] ~~Explorer direct streaming~~ Dropped from 1.3: columnar data and Explorer belong in [ex_arrow](https://hex.pm/packages/ex_arrow), and Binsparse in [ex_graphblas](https://hex.pm/packages/ex_graphblas)
 
 ---
 
-## v1.4.0 (Planned) — Performance & Packaging
+## v1.4.0 (Planned) - Performance & Packaging
 
 - [ ] Async codec pipeline
 - [ ] Vendored/static codec libraries
@@ -46,14 +46,14 @@ Released 2026-10-08.
 
 ---
 
-## v2.0.0 (Future) — Distributed Processing
+## v2.0.0 (Future) - Distributed Processing
 
 - [ ] Multi-node chunk processing
 - [ ] Cross-node telemetry
 
 ---
 
-## Deferred from v1.2 (explicit)
+## Deferred (explicit)
 
 - Unified retry layer across cloud SDKs
 - Native multi-range / coalescing heuristics

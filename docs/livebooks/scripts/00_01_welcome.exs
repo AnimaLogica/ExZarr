@@ -546,7 +546,7 @@ IO.puts("Full array shape: #{inspect(Nx.shape(full))}")
     shape: {100, 100},
     chunks: {50, 50},
     dtype: :float64,
-    compressor: nil,
+    compressor: :none,
     storage: :memory
   )
 
