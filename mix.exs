@@ -140,6 +140,7 @@ defmodule ExZarr.MixProject do
       extras: [
         # Getting Started
         "docs/guides/what_is_zarr.md",
+        "docs/guides/getting_started.md",
         {"README.md", title: "Introduction"},
 
         # Core Concepts
@@ -219,6 +220,7 @@ defmodule ExZarr.MixProject do
       groups_for_extras: [
         "Getting Started": [
           "docs/guides/what_is_zarr.md",
+          "docs/guides/getting_started.md",
           "README.md"
         ],
         "Core Concepts": [
