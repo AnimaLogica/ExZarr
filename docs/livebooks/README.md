@@ -26,7 +26,11 @@ Or open any `.livemd` in [Livebook](https://livebook.dev/). Path installs use
 | Livebook | Topic |
 |----------|--------|
 | [`01_core_zarr/01_01_first_zarr_array.livemd`](01_core_zarr/01_01_first_zarr_array.livemd) | Create → write → read → stream → save |
+| [`01_core_zarr/01_02_metadata_and_chunks.livemd`](01_core_zarr/01_02_metadata_and_chunks.livemd) | v2/v3 metadata and chunk files |
 | [`01_core_zarr/01_03_chunk_streaming.livemd`](01_core_zarr/01_03_chunk_streaming.livemd) | Sequential vs parallel chunk streaming |
+| [`03_nx_ml/03_01_zarr_to_nx.livemd`](03_nx_ml/03_01_zarr_to_nx.livemd) | Array, tensor, and dtype conversion |
+| [`03_nx_ml/03_02_streaming_minibatches.livemd`](03_nx_ml/03_02_streaming_minibatches.livemd) | Chunk streams and DataLoader batches |
+| [`03_nx_ml/03_03_training_from_zarr.livemd`](03_nx_ml/03_03_training_from_zarr.livemd) | Small Axon train from Zarr batches |
 | [`01_core_zarr/01_04_codecs_and_pipelines.livemd`](01_core_zarr/01_04_codecs_and_pipelines.livemd) | Codecs and pipelines |
 | [`04_ai_genai/04_01_embeddings_in_zarr.livemd`](04_ai_genai/04_01_embeddings_in_zarr.livemd) | Embeddings in Zarr |
 | [`05_finance/05_01_tick_data_cube.livemd`](05_finance/05_01_tick_data_cube.livemd) | Tick data cube |

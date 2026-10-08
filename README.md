@@ -39,7 +39,7 @@ Add `ex_zarr` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"}
+    {:ex_zarr, "~> 1.3"}
   ]
 end
 ```
@@ -872,6 +872,10 @@ Key modules:
 
 See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
+**v1.3.0 (released 2026-10-08)** - Data science interop:
+`ExZarr.Nx.stream_chunk_tensors/2`, DataLoader batch recipes, livebook MVP
+(metadata, Nx conversion, minibatches, a small Axon train).
+
 **v1.2.0 (released 2026-10-04)** - Zarr 3.1 interoperability & range-aware cloud I/O:
 spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
 AzureSDK migration, codecs via ExCodecs (no native toolchain), `compressor_config`,
@@ -879,8 +883,6 @@ Python fixture/CI matrix.
 
 **Upcoming** (high level):
 
-- **v1.3.0** - **Data science interop**
-  Explorer streaming, Nx batch recipes from `stream_chunks`, livebook curriculum, cookbook expansion.
 - **v1.4.0** - **Performance & packaging**
   Async codec pipeline (overlap I/O + decode), vendored/static codecs, adaptive range coalescing,
   storage-transformer execution.

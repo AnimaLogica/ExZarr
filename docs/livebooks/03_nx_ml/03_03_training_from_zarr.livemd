@@ -1,0 +1,72 @@
+# Training from Zarr
+
+A one-layer Axon model trained on batches read from ExZarr. Axon is installed only in this notebook.
+
+```elixir
+Mix.install([
+  {:ex_zarr, "~> 1.3"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
+  {:nx, "~> 0.7"},
+  {:axon, "~> 0.7"}
+])
+```
+
+## Store a linear dataset
+
+Targets are `2 * x0 + 1` plus a little noise stored as float32.
+
+```elixir
+alias ExZarr.Array
+
+n = 64
+features = for(i <- 0..(n - 1), j <- 0..1, into: <<>>, do: <<(i + j) * 0.05::float-little-32>>)
+
+targets =
+  for i <- 0..(n - 1), into: <<>> do
+    <<(2.0 * (i * 0.05) + 1.0)::float-little-32>>
+  end
+
+{:ok, x_array} =
+  Array.create(shape: {n, 2}, chunks: {16, 2}, dtype: :float32, storage: :memory)
+
+{:ok, y_array} =
+  Array.create(shape: {n, 1}, chunks: {16, 1}, dtype: :float32, storage: :memory)
+
+:ok = Array.set_slice(x_array, features, start: {0, 0}, stop: {n, 2})
+:ok = Array.set_slice(y_array, targets, start: {0, 0}, stop: {n, 1})
+
+:ok
+```
+
+## Model and batches
+
+```elixir
+model =
+  Axon.input("features", shape: {nil, 2})
+  |> Axon.dense(1)
+
+batches =
+  ExZarr.Nx.DataLoader.paired_batch_stream(x_array, y_array, 16, drop_remainder: true)
+  |> Stream.map(fn {:ok, {x, y}} ->
+    {Nx.as_type(x, {:f, 32}), Nx.as_type(y, {:f, 32})}
+  end)
+  |> Stream.map(fn {x, y} -> {%{"features" => x}, y} end)
+
+model
+```
+
+## A few SGD steps
+
+```elixir
+trainer = Axon.Loop.trainer(model, :mean_squared_error, :sgd)
+
+trained = Axon.Loop.run(trainer, batches, %{}, epochs: 3, iterations: 4)
+
+model_state =
+  case trained do
+    %Axon.Loop.State{step_state: %{model_state: state}} -> state
+    state -> state
+  end
+
+Axon.predict(model, model_state, %{"features" => Nx.tensor([[0.0, 0.0], [1.0, 0.0]])})
+```

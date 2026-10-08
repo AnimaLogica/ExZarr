@@ -42,7 +42,8 @@ defmodule ExZarr.Nx do
       {:ok, tensors} = ExZarr.Nx.to_tensor_chunked(array, {100, 100})
       # Returns stream of smaller tensors
 
-  See `ExZarr.Nx.DataLoader` for ML training workflows.
+  See `ExZarr.Nx.DataLoader` for sample-axis batches. Use `stream_chunk_tensors/2`
+  when you want one tensor per stored chunk via `Array.stream_chunks/2`.
   """
 
   alias ExZarr.Array
@@ -240,44 +241,80 @@ defmodule ExZarr.Nx do
   end
 
   @doc """
-  Converts ExZarr array to stream of Nx tensors by processing in chunks.
+  Streams one Nx tensor per Zarr chunk.
 
-  For large arrays that don't fit in memory, this function loads the array
-  in chunks and yields a tensor for each chunk. Useful for processing large
-  datasets incrementally.
+  Wraps `ExZarr.Array.stream_chunks/2`. Each yielded chunk binary is reshaped
+  with that chunk's bounds (edge chunks are smaller than `array.chunks`) and
+  the array dtype. Streaming options are forwarded unchanged.
+
+  Use this when work is chunk-aligned (decode, reduce, write-back). Use
+  `ExZarr.Nx.DataLoader` when you need fixed-size batches along the first
+  axis; those read with `get_slice/2` and can span chunk boundaries.
+
+  ## Options
+
+  Tensor options (not forwarded to `stream_chunks/2`):
+
+  - `:backend` - Nx backend to transfer each tensor to
+  - `:names` - Axis names for each tensor
+
+  All other options match `ExZarr.Array.stream_chunks/2` (`:concurrency`,
+  `:ordered`, `:timeout`, `:on_error`, `:filter`, `:include_missing`).
+  `:metadata` is forced on internally so edge-chunk shapes are known; the
+  stream still yields `{:ok, tensor}` or `{:error, reason}`, not chunk maps.
+
+  `:on_error` behaves like `stream_chunks/2`: `:skip` drops failed chunks,
+  `:halt` raises `ExZarr.StreamError`.
+
+  ## Examples
+
+      array
+      |> ExZarr.Nx.stream_chunk_tensors(concurrency: 4)
+      |> Stream.map(fn {:ok, tensor} -> Nx.mean(tensor) end)
+      |> Enum.to_list()
+
+  """
+  @spec stream_chunk_tensors(ExZarr.Array.t(), keyword()) ::
+          Enumerable.t({:ok, Nx.Tensor.t()} | {:error, term()})
+  def stream_chunk_tensors(%Array{} = array, opts \\ []) do
+    {tensor_opts, stream_opts} = Keyword.split(opts, [:backend, :names])
+    stream_opts = Keyword.put(stream_opts, :metadata, true)
+
+    array
+    |> Array.stream_chunks(stream_opts)
+    |> Stream.map(&chunk_event_to_tensor(array, &1, tensor_opts))
+  end
+
+  @doc """
+  Converts ExZarr array to stream of Nx tensors by processing in slices.
+
+  For large arrays that don't fit in memory, this function loads rectangular
+  regions of `chunk_size` and yields a tensor for each region. Regions follow
+  the requested size, not the array's stored chunk grid. For one tensor per
+  stored chunk, use `stream_chunk_tensors/2`.
 
   ## Parameters
 
   - `array` - ExZarr array to convert
-  - `chunk_size` - Size of chunks to load (tuple matching array dimensionality)
+  - `chunk_size` - Size of regions to load (tuple matching array dimensionality)
   - `opts` - Options (same as `to_tensor/2`)
 
   ## Returns
 
-  Stream that yields `{:ok, tensor}` or `{:error, reason}` for each chunk.
+  Stream that yields `{:ok, tensor}` or `{:error, reason}` for each region.
 
   ## Examples
 
-      # Process 100×100 chunks from large array
+      # Process 100×100 regions from a large array
       {:ok, array} = ExZarr.open(path: "/data/large_array")
 
       array
       |> ExZarr.Nx.to_tensor_chunked({100, 100})
       |> Stream.each(fn {:ok, tensor} ->
-        # Process each tensor chunk
         result = Nx.mean(tensor) |> Nx.to_number()
-        IO.puts("Chunk mean: \#{result}")
+        IO.puts("Region mean: \#{result}")
       end)
       |> Stream.run()
-
-      # Map over chunks in parallel
-      results =
-        array
-        |> ExZarr.Nx.to_tensor_chunked({100, 100})
-        |> Task.async_stream(fn {:ok, tensor} ->
-          Nx.sum(tensor) |> Nx.to_number()
-        end, max_concurrency: 4)
-        |> Enum.to_list()
 
   """
   @spec to_tensor_chunked(ExZarr.Array.t(), tuple(), keyword()) ::
@@ -474,5 +511,106 @@ defmodule ExZarr.Nx do
     |> Enum.zip(Tuple.to_list(stop))
     |> Enum.map(fn {start_val, stop_val} -> stop_val - start_val end)
     |> List.to_tuple()
+  end
+
+  defp chunk_event_to_tensor(array, %{index: index, data: data}, opts)
+       when is_binary(data) do
+    binary_to_chunk_tensor(array, index, data, opts)
+  end
+
+  defp chunk_event_to_tensor(array, {index, data}, opts) when is_binary(data) do
+    binary_to_chunk_tensor(array, index, data, opts)
+  end
+
+  defp chunk_event_to_tensor(_array, other, _opts) do
+    {:error, {:unexpected_chunk_event, other}}
+  end
+
+  defp binary_to_chunk_tensor(array, index, data, opts) do
+    {start_coords, stop_coords} = Array.get_chunk_bounds(array, index)
+    shape = calculate_chunk_shape(start_coords, stop_coords)
+    nominal = array.chunks
+
+    with {:ok, nx_type} <- zarr_to_nx_type(array.metadata.dtype),
+         {:ok, payload} <- crop_chunk_binary(data, shape, nominal, Array.itemsize(array)) do
+      tensor =
+        payload
+        |> Nx.from_binary(nx_type)
+        |> Nx.reshape(shape)
+        |> apply_tensor_opts(opts)
+
+      {:ok, tensor}
+    end
+  end
+
+  defp crop_chunk_binary(data, shape, nominal, itemsize) do
+    logical_bytes = tuple_product(shape) * itemsize
+    nominal_bytes = tuple_product(nominal) * itemsize
+
+    cond do
+      byte_size(data) == logical_bytes ->
+        {:ok, data}
+
+      byte_size(data) == nominal_bytes ->
+        {:ok, extract_logical_chunk(data, shape, nominal, itemsize)}
+
+      true ->
+        {:error,
+         {:invalid_chunk_size,
+          %{expected: logical_bytes, nominal: nominal_bytes, actual: byte_size(data)}}}
+    end
+  end
+
+  defp extract_logical_chunk(data, shape, nominal, itemsize) do
+    strides = chunk_strides(nominal)
+
+    shape
+    |> tuple_coordinates()
+    |> Enum.map(fn coord ->
+      offset = flat_offset(coord, strides) * itemsize
+      binary_part(data, offset, itemsize)
+    end)
+    |> IO.iodata_to_binary()
+  end
+
+  defp chunk_strides(shape) do
+    dims = Tuple.to_list(shape)
+
+    dims
+    |> Enum.reverse()
+    |> Enum.reduce({[], 1}, fn dim, {acc, stride} ->
+      {[stride | acc], stride * dim}
+    end)
+    |> elem(0)
+  end
+
+  defp tuple_coordinates(shape) do
+    shape
+    |> Tuple.to_list()
+    |> Enum.map(&(&1 - 1))
+    |> Enum.map(&Range.new(0, &1))
+    |> cartesian_product()
+  end
+
+  defp flat_offset(coord, strides) do
+    Enum.zip(coord, strides)
+    |> Enum.reduce(0, fn {index, stride}, acc -> acc + index * stride end)
+  end
+
+  defp tuple_product(shape) do
+    shape |> Tuple.to_list() |> Enum.reduce(1, &*/2)
+  end
+
+  defp apply_tensor_opts(tensor, opts) do
+    tensor =
+      case Keyword.get(opts, :names) do
+        nil -> tensor
+        names -> Nx.rename(tensor, names)
+      end
+
+    case Keyword.get(opts, :backend) do
+      nil -> tensor
+      backend -> Nx.backend_transfer(tensor, backend)
+    end
   end
 end

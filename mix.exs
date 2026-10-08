@@ -1,7 +1,7 @@
 defmodule ExZarr.MixProject do
   use Mix.Project
 
-  @version "1.2.0"
+  @version "1.3.0"
   @source_url "https://github.com/AnimaLogica/ExZarr"
 
   def project do
@@ -163,7 +163,11 @@ defmodule ExZarr.MixProject do
         # Examples
         "docs/livebooks/README.md",
         "docs/livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+        "docs/livebooks/01_core_zarr/01_02_metadata_and_chunks.livemd",
         "docs/livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+        "docs/livebooks/03_nx_ml/03_01_zarr_to_nx.livemd",
+        "docs/livebooks/03_nx_ml/03_02_streaming_minibatches.livemd",
+        "docs/livebooks/03_nx_ml/03_03_training_from_zarr.livemd",
         "docs/livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
         "docs/livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
         "docs/livebooks/05_finance/05_01_tick_data_cube.livemd",
@@ -194,6 +198,7 @@ defmodule ExZarr.MixProject do
         "CHANGELOG.md",
         "docs/release_notes_v1_1_0.md",
         "docs/release_notes_v1_2_0.md",
+        "docs/release_notes_v1_3_0.md",
         "docs/ROADMAP.md",
         "docs/ZARR_V3_STATUS.md",
         "docs/INTEROPERABILITY.md",
@@ -237,7 +242,11 @@ defmodule ExZarr.MixProject do
         Examples: [
           "docs/livebooks/README.md",
           "docs/livebooks/01_core_zarr/01_01_first_zarr_array.livemd",
+          "docs/livebooks/01_core_zarr/01_02_metadata_and_chunks.livemd",
           "docs/livebooks/01_core_zarr/01_03_chunk_streaming.livemd",
+          "docs/livebooks/03_nx_ml/03_01_zarr_to_nx.livemd",
+          "docs/livebooks/03_nx_ml/03_02_streaming_minibatches.livemd",
+          "docs/livebooks/03_nx_ml/03_03_training_from_zarr.livemd",
           "docs/livebooks/01_core_zarr/01_04_codecs_and_pipelines.livemd",
           "docs/livebooks/04_ai_genai/04_01_embeddings_in_zarr.livemd",
           "docs/livebooks/05_finance/05_01_tick_data_cube.livemd",
@@ -278,6 +287,7 @@ defmodule ExZarr.MixProject do
         "Release Notes & Migration Guides": [
           "docs/release_notes_v1_1_0.md",
           "docs/release_notes_v1_2_0.md",
+          "docs/release_notes_v1_3_0.md",
           "docs/migration_guide_v1_1_0.md"
         ],
         Reference: [

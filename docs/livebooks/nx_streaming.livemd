@@ -2,70 +2,130 @@
 
 ## Introduction
 
-Stream Zarr chunks directly into Nx tensors for machine learning workflows.
+Two ways to turn a Zarr array into Nx tensors:
+
+- `ExZarr.Nx.stream_chunk_tensors/2` — one tensor per stored chunk (`Array.stream_chunks/2`)
+- `ExZarr.Nx.DataLoader` — fixed-size batches along the first axis (`Array.get_slice/2`)
 
 ```elixir
 Mix.install([
-  {:ex_zarr, "~> 1.2"},
-  # {:ex_zarr, path: Path.join(__DIR__, "../../..")}
+  {:ex_zarr, "~> 1.3"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../..")}
   {:nx, "~> 0.7"},
   {:kino, "~> 0.13"}
 ])
 ```
 
-## Create Array and Stream to Tensors
+## Section
+
+Create a small in-memory array. The last chunk is shorter than `chunks`.
 
 ```elixir
 alias ExZarr.Array
 
 {:ok, array} =
   Array.create(
-    shape: {100, 100},
-    chunks: {10, 10},
+    shape: {10, 4},
+    chunks: {4, 4},
     dtype: :float32,
     storage: :memory
   )
 
-data = for(_ <- 1..100, into: <<>>, do: <<1.0::float-little-32>>)
-Array.set_slice(array, data, start: {0, 0}, stop: {10, 10})
+data = for i <- 0..39, into: <<>>, do: <<i * 1.0::float-little-32>>
+:ok = Array.set_slice(array, data, start: {0, 0}, stop: {10, 4})
 
-tensors =
+:ok
+```
+
+## Section
+
+`stream_chunk_tensors/2` yields `{:ok, tensor}`. Edge chunks are cropped to the array bounds. `:concurrency` and `:on_error` are forwarded to `stream_chunks/2`.
+
+```elixir
+chunk_shapes =
   array
-  |> Array.stream_chunks()
-  |> Stream.take(4)
-  |> Enum.map(fn {_index, chunk_data} ->
-    Nx.from_binary(chunk_data, {:f, 32})
+  |> ExZarr.Nx.stream_chunk_tensors(concurrency: 2, ordered: true)
+  |> Enum.map(fn {:ok, tensor} -> Nx.shape(tensor) end)
+
+Kino.inspect(chunk_shapes)
+```
+
+## Section
+
+Sum each stored chunk, then add the partial sums. This stays chunk-aligned and does not build a sample index.
+
+```elixir
+total =
+  array
+  |> ExZarr.Nx.stream_chunk_tensors()
+  |> Enum.reduce(0.0, fn {:ok, tensor}, acc ->
+    acc + (Nx.sum(tensor) |> Nx.to_number())
   end)
 
-length(tensors)
+total
 ```
 
-## Batch Pipeline
+## Section
+
+`to_tensor_chunked/3` ignores the stored grid and reads regions of the size you pass.
 
 ```elixir
-batches =
+region_shapes =
   array
-  |> Array.stream_chunks(concurrency: 2)
-  |> Stream.map(fn {_index, data} -> Nx.from_binary(data, {:f, 32}) end)
-  |> Stream.chunk_every(2)
-  |> Enum.take(2)
+  |> ExZarr.Nx.to_tensor_chunked({3, 4})
+  |> Enum.map(fn {:ok, tensor} -> Nx.shape(tensor) end)
 
-Kino.inspect(batches |> Enum.map(fn batch -> Enum.map(batch, &Nx.shape/1) end))
+region_shapes
 ```
 
-## Using DataLoader
+## Section
 
-For training workflows with shuffling:
+`DataLoader.batch_stream/3` slices along axis 0. A batch can cross chunk boundaries. `drop_remainder: true` drops a short final batch.
 
 ```elixir
-array
-|> ExZarr.Nx.DataLoader.batch_stream(32)
-|> Enum.take(3)
-|> Enum.map(fn {:ok, batch} -> Nx.shape(batch) end)
+batch_shapes =
+  array
+  |> ExZarr.Nx.DataLoader.batch_stream(3, drop_remainder: true)
+  |> Enum.map(fn {:ok, batch} -> Nx.shape(batch) end)
+
+batch_shapes
+```
+
+## Section
+
+Shuffling permutes every sample index for the epoch. `:shuffle_buffer_size` is ignored. Pass `:seed` when you need the same order again.
+
+```elixir
+first_rows =
+  array
+  |> ExZarr.Nx.DataLoader.shuffled_batch_stream(2, seed: 7, drop_remainder: true)
+  |> Enum.take(2)
+  |> Enum.map(fn {:ok, batch} -> Nx.to_list(batch) end)
+
+first_rows
+```
+
+## Section
+
+Pair a feature array with a label array. Both must have the same length on axis 0.
+
+```elixir
+{:ok, labels} =
+  Array.create(shape: {10}, chunks: {4}, dtype: :float32, storage: :memory)
+
+label_data = for i <- 0..9, into: <<>>, do: <<(i * 10.0)::float-little-32>>
+:ok = Array.set_slice(labels, label_data, start: {0}, stop: {10})
+
+pairs =
+  ExZarr.Nx.DataLoader.paired_batch_stream(array, labels, 4)
+  |> Enum.map(fn {:ok, {x, y}} -> {Nx.shape(x), Nx.shape(y)} end)
+
+pairs
 ```
 
 ## Key Takeaways
 
-1. `stream_chunks` composes naturally with `Nx.from_binary/2`
-2. Use `concurrency` to overlap I/O with tensor construction
-3. `ExZarr.Nx.DataLoader` handles sample-level batching and shuffling
+1. Use `stream_chunk_tensors/2` for chunk-aligned map/reduce and `:concurrency`.
+2. Use `DataLoader.batch_stream/3` when the step needs a fixed sample count.
+3. Use `paired_batch_stream/4` so features and labels stay aligned.
+4. `shuffled_batch_stream/3` keeps the full index list in memory for the epoch.

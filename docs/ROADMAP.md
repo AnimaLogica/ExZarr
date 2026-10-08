@@ -26,11 +26,14 @@ Released 2026-06-12. Backward compatible with v1.0.
 
 ---
 
-## v1.3.0 (Planned) — Data Science Interop
+## v1.3.0 — Data Science Interop
 
-- [ ] Explorer direct streaming integration
-- [ ] `ExZarr.Nx` streaming recipes
-- [ ] Livebook curriculum completion
+Released 2026-10-08.
+
+- [x] `ExZarr.Nx.stream_chunk_tensors/2` (stored chunks → tensors, edge crops)
+- [x] DataLoader documented against its real shuffle (full index list)
+- [x] Livebook MVP: metadata, Zarr↔Nx, minibatches, Axon toy train
+- [x] Arrow/Explorer stay in ex_arrow; Binsparse stays in ex_graphblas
 
 ---
 
@@ -55,4 +58,5 @@ Released 2026-06-12. Backward compatible with v1.0.
 - Unified retry layer across cloud SDKs
 - Native multi-range / coalescing heuristics
 - Partial writes inside cloud shards
-- Explorer / new Nx APIs
+- Partial shuffle buffer (`:shuffle_buffer_size` is accepted and ignored)
+- Contiguous `load_samples_at_indices/3` reads

@@ -11,7 +11,7 @@ This guide shows how to integrate ExZarr with Nx (Numerical Elixir) for numerica
 - [Optimized Conversion (Recommended)](#optimized-conversion-recommended)
 - [Dtype and Shape Mapping](#dtype-and-shape-mapping)
 - [Chunked Processing](#chunked-processing)
-- [Batch Processing Patterns](#batch-processing-patterns)
+- [DataLoader and Chunk Streams](#dataloader-and-chunk-streams)
 - [ML Training/Inference Workflows](#ml-traininginference-workflows)
 - [Backend Integration](#backend-integration)
 - [Performance Considerations](#performance-considerations)
@@ -23,7 +23,7 @@ This guide shows how to integrate ExZarr with Nx (Numerical Elixir) for numerica
 ```elixir
 # Install dependencies
 Mix.install([
-  {:ex_zarr, "~> 1.2"},
+  {:ex_zarr, "~> 1.3"},
   {:nx, "~> 0.7"}
 ])
 
@@ -254,20 +254,36 @@ ExZarr.Nx.supported_nx_types()
 
 ## Chunked Processing
 
-For arrays larger than available RAM, process in chunks with constant memory usage.
+For arrays larger than available RAM, process one region at a time.
 
-### Streaming Chunks as Tensors
+### One tensor per stored chunk
+
+`ExZarr.Nx.stream_chunk_tensors/2` wraps `Array.stream_chunks/2`. Each item is the stored chunk, cropped to the array bounds when the last chunk is shorter than `chunks`. Pass `:concurrency` and `:on_error` through.
 
 ```elixir
 {:ok, array} = ExZarr.open(path: "/data/large_array")
 
-# Process array in 100×100 chunks
+array
+|> ExZarr.Nx.stream_chunk_tensors(concurrency: 4)
+|> Stream.each(fn {:ok, tensor} ->
+  mean = Nx.mean(tensor) |> Nx.to_number()
+  IO.puts("Chunk mean: #{mean}")
+end)
+|> Stream.run()
+```
+
+### Regions that are not the stored chunk grid
+
+`to_tensor_chunked/3` reads rectangular slices of the size you pass. Use it when the region should not follow `array.chunks`.
+
+```elixir
+{:ok, array} = ExZarr.open(path: "/data/large_array")
+
 array
 |> ExZarr.Nx.to_tensor_chunked({100, 100})
 |> Stream.each(fn {:ok, tensor} ->
-  # Each tensor is 100×100
   mean = Nx.mean(tensor) |> Nx.to_number()
-  IO.puts("Chunk mean: #{mean}")
+  IO.puts("Region mean: #{mean}")
 end)
 |> Stream.run()
 ```
@@ -345,86 +361,51 @@ IO.puts("Global min: #{stats.min}")
 IO.puts("Global max: #{stats.max}")
 ```
 
-## Batch Processing Patterns
+## DataLoader and Chunk Streams
 
-### Mini-Batch Data Loading for ML
+Two streaming shapes cover the usual numerical workflows.
 
-Efficient batch loading for machine learning training:
+| API | What each item is | Read path |
+| --- | --- | --- |
+| `ExZarr.Nx.stream_chunk_tensors/2` | One stored chunk | `Array.stream_chunks/2` |
+| `ExZarr.Nx.DataLoader.batch_stream/3` | A fixed number of samples along axis 0 | `Array.get_slice/2` |
+| `ExZarr.Nx.DataLoader.paired_batch_stream/4` | Matching feature and label batches | `get_slice/2` on both arrays |
+| `ExZarr.Nx.to_tensor_chunked/3` | A rectangular region you choose | `get_slice/2` |
 
-```elixir
-defmodule BatchLoader do
-  @doc """
-  Load batch from ExZarr array for ML training.
+`batch_stream/3` can cross chunk boundaries. `stream_chunk_tensors/2` cannot: the tensor shape is the chunk that was stored, including a shorter edge chunk.
 
-  Aligns ExZarr chunks with batch size for optimal performance.
-  """
-  def load_batch(array, batch_idx, batch_size) do
-    {num_samples, num_features} = array.metadata.shape
+`shuffled_batch_stream/3` shuffles the full sample-index list for the epoch. `:shuffle_buffer_size` is accepted and ignored.
 
-    start_idx = batch_idx * batch_size
-    end_idx = min(start_idx + batch_size, num_samples)
-
-    if start_idx >= num_samples do
-      {:error, :end_of_data}
-    else
-      # Load batch binary
-      {:ok, batch_binary} = ExZarr.Array.get_slice(array,
-        start: {start_idx, 0},
-        stop: {end_idx, num_features}
-      )
-
-      # Convert to Nx tensor
-      {:ok, nx_type} = ExZarr.Nx.zarr_to_nx_type(array.metadata.dtype)
-
-      batch_tensor = Nx.from_binary(batch_binary, nx_type)
-                     |> Nx.reshape({end_idx - start_idx, num_features})
-
-      {:ok, batch_tensor}
-    end
-  end
-
-  def batch_stream(array, batch_size) do
-    {num_samples, _} = array.metadata.shape
-    num_batches = ceil(num_samples / batch_size)
-
-    Stream.map(0..(num_batches - 1), fn batch_idx ->
-      load_batch(array, batch_idx, batch_size)
-    end)
-    |> Stream.take_while(fn
-      {:ok, _} -> true
-      {:error, :end_of_data} -> false
-    end)
-  end
-end
-```
-
-### Training Loop Example
+### Training loop
 
 ```elixir
-# Load training data from ExZarr
-{:ok, X_train} = ExZarr.open(path: "/data/train_features")
+{:ok, x_train} = ExZarr.open(path: "/data/train_features")
 {:ok, y_train} = ExZarr.open(path: "/data/train_labels")
 
-# Training loop with batches
 model_state = initialize_model()
 
-# Process batches
-X_batches = BatchLoader.batch_stream(X_train, 32)
-y_batches = BatchLoader.batch_stream(y_train, 32)
+trained_state =
+  ExZarr.Nx.DataLoader.paired_shuffled_batch_stream(x_train, y_train, 32, seed: 1)
+  |> Enum.reduce(model_state, fn {:ok, {x_batch, y_batch}}, state ->
+    {loss, updated_state} = train_step(state, x_batch, y_batch)
 
-trained_state = Stream.zip(X_batches, y_batches)
-|> Enum.reduce(model_state, fn {{:ok, X_batch}, {:ok, y_batch}}, state ->
-  # Training step (with Nx.Defn for compilation)
-  {loss, updated_state} = train_step(state, X_batch, y_batch)
+    if rem(state.step, 100) == 0 do
+      IO.puts("Step #{state.step}, Loss: #{Float.round(loss, 4)}")
+    end
 
-  if rem(state.step, 100) == 0 do
-    IO.puts("Step #{state.step}, Loss: #{Float.round(loss, 4)}")
-  end
+    updated_state
+  end)
+```
 
-  updated_state
-end)
+### Chunk-aligned reduction
 
-IO.puts("Training complete!")
+```elixir
+sums =
+  array
+  |> ExZarr.Nx.stream_chunk_tensors(concurrency: 4, on_error: :skip)
+  |> Enum.map(fn {:ok, tensor} -> Nx.sum(tensor) |> Nx.to_number() end)
+
+total = Enum.sum(sums)
 ```
 
 ### Optimal Chunk Alignment
@@ -617,15 +598,16 @@ defmodule Training do
   end
 
   # Load data outside defn (eager), compute inside (compiled)
-  def train_step(params, array, labels_array, batch_idx, batch_size) do
-    # Load batch from ExZarr (eager, not compiled)
-    {:ok, batch} = BatchLoader.load_batch(array, batch_idx, batch_size)
-    {:ok, labels} = BatchLoader.load_batch(labels_array, batch_idx, batch_size)
+  def train_step(params, batch, labels) do
+    loss(params, batch, labels)
+  end
 
-    # Compute with defn (lazy, compiled)
-    loss_value = loss(params, batch, labels)
-
-    loss_value
+  def epoch(params, features, labels_array, batch_size) do
+    features
+    |> ExZarr.Nx.DataLoader.paired_batch_stream(labels_array, batch_size, drop_remainder: true)
+    |> Enum.reduce(params, fn {:ok, {batch, labels}}, params_acc ->
+      train_step(params_acc, batch, labels)
+    end)
   end
 end
 ```
@@ -717,11 +699,10 @@ compressor: %{id: "zstd", level: 10}  # Best ratio
 # Avoid repeated allocations in loops
 defmodule EfficientProcessing do
   def process_batches(array, num_batches, batch_size) do
-    # Pre-allocate reusable tensor (if possible)
-    for batch_idx <- 0..(num_batches - 1) do
-      {:ok, batch} = BatchLoader.load_batch(array, batch_idx, batch_size)
-      process(batch)
-    end
+    array
+    |> ExZarr.Nx.DataLoader.batch_stream(batch_size, drop_remainder: true)
+    |> Stream.take(num_batches)
+    |> Enum.each(fn {:ok, batch} -> process(batch) end)
   end
 end
 ```
@@ -808,16 +789,10 @@ complex_restored = Nx.complex(real, imag)
 ```elixir
 # Load batches outside defn
 def train_epoch(params, array, batch_size) do
-  num_batches = div(elem(array.metadata.shape, 0), batch_size)
-
-  Enum.reduce(0..(num_batches - 1), params, fn batch_idx, params_acc ->
-    # Load batch (eager, outside defn)
-    {:ok, batch} = BatchLoader.load_batch(array, batch_idx, batch_size)
-
-    # Compute (lazy, compiled)
-    updated_params = train_step(params_acc, batch)
-
-    updated_params
+  array
+  |> ExZarr.Nx.DataLoader.batch_stream(batch_size, drop_remainder: true)
+  |> Enum.reduce(params, fn {:ok, batch}, params_acc ->
+    train_step(params_acc, batch)
   end)
 end
 

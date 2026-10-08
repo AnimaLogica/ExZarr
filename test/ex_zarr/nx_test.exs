@@ -165,6 +165,77 @@ defmodule ExZarr.NxTest do
       end
     end
 
+    describe "stream_chunk_tensors/2" do
+      test "yields one tensor per stored chunk, including a short edge chunk" do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {5},
+            chunks: {3},
+            dtype: :int32,
+            storage: :memory
+          )
+
+        data = for i <- 0..4, into: <<>>, do: <<i::32-native>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0}, stop: {5})
+
+        tensors =
+          array
+          |> ExZarrNx.stream_chunk_tensors(names: [:n])
+          |> Enum.map(fn {:ok, tensor} -> tensor end)
+
+        assert length(tensors) == 2
+        assert Enum.map(tensors, &Nx.shape/1) == [{3}, {2}]
+        assert Enum.all?(tensors, &(Nx.names(&1) == [:n]))
+        assert tensors |> Enum.map(&Nx.to_flat_list/1) |> List.flatten() == [0, 1, 2, 3, 4]
+      end
+
+      test "crops a padded edge chunk in C order" do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {2, 3},
+            chunks: {2, 2},
+            dtype: :uint8,
+            storage: :memory
+          )
+
+        data = <<1, 2, 3, 4, 5, 6>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0, 0}, stop: {2, 3})
+
+        values =
+          array
+          |> ExZarrNx.stream_chunk_tensors(ordered: true)
+          |> Enum.map(fn {:ok, tensor} -> Nx.to_flat_list(tensor) end)
+
+        assert values == [[1, 2, 4, 5], [3, 6]]
+      end
+
+      test "forwards concurrency without treating it as a tensor option" do
+        {:ok, array} =
+          ExZarr.create(
+            shape: {4, 4},
+            chunks: {2, 2},
+            dtype: :uint8,
+            storage: :memory
+          )
+
+        data = for i <- 0..15, into: <<>>, do: <<i::8>>
+        :ok = ExZarr.Array.set_slice(array, data, start: {0, 0}, stop: {4, 4})
+
+        results =
+          array |> ExZarrNx.stream_chunk_tensors(concurrency: 2, ordered: true) |> Enum.to_list()
+
+        assert length(results) == 4
+        assert Enum.all?(results, &match?({:ok, _}, &1))
+
+        assert Enum.map(results, fn {:ok, tensor} -> Nx.shape(tensor) end) == [
+                 {2, 2},
+                 {2, 2},
+                 {2, 2},
+                 {2, 2}
+               ]
+      end
+    end
+
     describe "to_tensor/2 - with options" do
       test "converts tensor with axis names" do
         {:ok, array} =

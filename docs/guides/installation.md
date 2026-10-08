@@ -40,7 +40,7 @@ Add ExZarr to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"}
+    {:ex_zarr, "~> 1.3"}
   ]
 end
 ```
@@ -60,7 +60,7 @@ For cloud storage backends, add the appropriate libraries:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"},
+    {:ex_zarr, "~> 1.3"},
     {:ex_aws, "~> 2.5"},
     {:ex_aws_s3, "~> 2.5"},
     {:sweet_xml, "~> 0.7"}  # For XML response parsing
@@ -72,7 +72,7 @@ end
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"},
+    {:ex_zarr, "~> 1.3"},
     {:goth, "~> 1.4"},      # Authentication
     {:req, "~> 0.6.1"}      # HTTP client
   ]
@@ -83,7 +83,7 @@ end
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"},
+    {:ex_zarr, "~> 1.3"},
     {:azure_sdk, "~> 0.4.1"}
   ]
 end
@@ -93,7 +93,7 @@ end
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"},
+    {:ex_zarr, "~> 1.3"},
     {:mongodb_driver, "~> 1.4"}
   ]
 end
@@ -181,7 +181,7 @@ If tests pass, your installation is complete and working correctly.
 
 ```elixir
 iex> Application.spec(:ex_zarr, :vsn) |> to_string()
-"1.2.0"
+"1.3.0"
 ```
 
 ## Build Troubleshooting

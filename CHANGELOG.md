@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-08
+
+### Data Science Interop
+
+### Added
+- `ExZarr.Nx.stream_chunk_tensors/2` maps `Array.stream_chunks/2` to Nx tensors.
+  Edge chunks stored at the full chunk size are cropped to the array bounds.
+  `:concurrency`, `:ordered`, `:timeout`, `:on_error`, `:filter`, and
+  `:include_missing` are forwarded. `:backend` and `:names` apply to each tensor.
+- Livebooks: metadata and chunks, Zarr-to-Nx conversion, streaming minibatches,
+  and a small Axon training notebook. `nx_streaming.livemd` is the recipe book.
+
+### Changed
+- `ExZarr.Nx.DataLoader` docs match the implementation: shuffled batches permute
+  the full sample index. `:shuffle_buffer_size` is accepted and ignored.
+- Nx guide uses DataLoader and `stream_chunk_tensors/2` for batch and chunk streams.
+
 ## [1.2.0] - 2026-10-04
 
 ### Zarr 3.1 Interoperability & Range-Aware Cloud I/O
@@ -885,7 +902,8 @@ None - Full backward compatibility maintained with v2 arrays
 
 ---
 
-[Unreleased]: https://github.com/AnimaLogica/ExZarr/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/AnimaLogica/ExZarr/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/AnimaLogica/ExZarr/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/AnimaLogica/ExZarr/releases/tag/v1.2.0
 [1.1.0]: https://github.com/AnimaLogica/ExZarr/releases/tag/v1.1.0
 [1.0.0]: https://github.com/AnimaLogica/ExZarr/releases/tag/v1.0.0

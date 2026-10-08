@@ -17,7 +17,7 @@ Add `ex_zarr` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"}
+    {:ex_zarr, "~> 1.3"}
   ]
 end
 ```
