@@ -1244,7 +1244,7 @@ GitHub Issues: [https://github.com/AnimaLogica/ExZarr/issues](https://github.com
 
 ```markdown
 ## Environment
-- ExZarr version: 1.2.0
+- ExZarr version: 1.3.0
 - Elixir version: 1.19.5
 - Erlang/OTP version: 28.1
 - OS: macOS 15.2 (arm64)

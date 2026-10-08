@@ -1,8 +1,10 @@
 # Embeddings in Zarr (chunked vectors + similarity scan)
 
 ```elixir
-  {:ex_zarr, "~> 1.2"},
-  # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
+Mix.install([
+  {:ex_zarr, "~> 1.3"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")}
+])
 ```
 
 ## Section

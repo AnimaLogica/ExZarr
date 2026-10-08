@@ -1,0 +1,111 @@
+# Metadata and chunks
+
+A Zarr array is metadata plus chunk files. This notebook writes v2 and v3 arrays, then reads the files ExZarr stored.
+
+```elixir
+Mix.install([
+  {:ex_zarr, "~> 1.3"},
+  # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
+  {:kino, "~> 0.13"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Setup
+
+```elixir
+alias ExZarr.Array
+alias ExZarr.Gallery.{Pack, SampleData}
+```
+
+## Create v2 and v3 arrays
+
+`:zarr_version` selects the metadata schema. The logical shape, chunks, and dtype stay the same.
+
+```elixir
+common = [
+  shape: {500, 400},
+  chunks: {100, 80},
+  dtype: :float32,
+  compressor: :zlib,
+  fill_value: 0.0,
+  storage: :memory
+]
+
+{:ok, array_v2} = Array.create([zarr_version: 2] ++ common)
+{:ok, array_v3} = Array.create([zarr_version: 3] ++ common)
+
+{array_v2.metadata.zarr_format, array_v3.metadata.zarr_format}
+```
+
+## Save and read metadata JSON
+
+```elixir
+base_dir = Path.join(System.tmp_dir!(), "exzarr_metadata_demo")
+v2_path = Path.join(base_dir, "array_v2")
+v3_path = Path.join(base_dir, "array_v3")
+
+File.rm_rf!(base_dir)
+:ok = Array.save(array_v2, path: v2_path)
+:ok = Array.save(array_v3, path: v3_path)
+
+v2_json = v2_path |> Path.join(".zarray") |> File.read!() |> Jason.decode!()
+v3_json = v3_path |> Path.join("zarr.json") |> File.read!() |> Jason.decode!()
+
+%{v2_keys: Map.keys(v2_json), v3_keys: Map.keys(v3_json)}
+```
+
+v2 stores a flat `.zarray` (`shape`, `chunks`, `dtype`, `compressor`). v3 stores `zarr.json` (`chunk_grid`, `data_type`, `codecs`, `chunk_key_encoding`).
+
+## Write a region and list chunk files
+
+A 150×150 write from the origin touches two row chunks and two column chunks.
+
+```elixir
+binary = 150 |> SampleData.matrix(150) |> Pack.pack(:float32)
+:ok = Array.set_slice(array_v2, binary, start: {0, 0}, stop: {150, 150})
+:ok = Array.set_slice(array_v3, binary, start: {0, 0}, stop: {150, 150})
+:ok = Array.save(array_v2, path: v2_path)
+:ok = Array.save(array_v3, path: v3_path)
+
+v2_files = File.ls!(v2_path) |> Enum.sort()
+
+v3_files =
+  v3_path
+  |> Path.join("**/*")
+  |> Path.wildcard()
+  |> Enum.map(&Path.relative_to(&1, v3_path))
+  |> Enum.sort()
+
+%{v2: v2_files, v3: v3_files}
+```
+
+v2 names chunks `0.0`, `0.1`, `1.0`, `1.1`. v3 nests them under `c/0/0`.
+
+## Chunk shape is an access-pattern choice
+
+```elixir
+shapes = [{100, 100}, {50, 200}, {200, 50}]
+
+Enum.map(shapes, fn chunks ->
+  {:ok, array} =
+    Array.create(shape: {1000, 1000}, chunks: chunks, dtype: :int32, storage: :memory)
+
+  {chunks, array.metadata.chunks}
+end)
+```
+
+Square chunks suit mixed 2D reads. Wide chunks suit row scans. Tall chunks suit column scans.
+
+## Metadata on the struct
+
+```elixir
+array_v2.metadata
+```
+
+## Takeaways
+
+1. Metadata is the contract; chunk files are the payload.
+2. v2 uses `.zarray`. v3 uses `zarr.json` and a codec list.
+3. Chunk filenames differ: `0.1` versus `c/0/1`.
+4. Choose `chunks` for the reads you actually do.

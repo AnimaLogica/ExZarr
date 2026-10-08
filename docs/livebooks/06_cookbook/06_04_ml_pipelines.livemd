@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:ex_zarr, "~> 1.2"},
+  {:ex_zarr, "~> 1.3"},
   # {:ex_zarr, path: Path.join(__DIR__, "../../..")},
   {:nx, "~> 0.7"}
 ])
@@ -10,30 +10,30 @@ Mix.install([
 
 ## Streaming tensors from chunks
 
+`stream_chunk_tensors/2` reshapes each stored chunk, including a short edge chunk.
+
 ```elixir
 alias ExZarr.Array
 alias ExZarr.Gallery.Pack
 
 {:ok, array} =
   Array.create(
-    shape: {128, 8},
+    shape: {100, 8},
     chunks: {32, 8},
     dtype: :float32,
     compressor: :zlib,
     storage: :memory
   )
 
-vals = for i <- 0..(128 * 8 - 1), do: i * 0.01
-:ok = Array.set_slice(array, Pack.pack(vals, :float32), start: {0, 0}, stop: {128, 8})
+vals = for i <- 0..(100 * 8 - 1), do: i * 0.01
+:ok = Array.set_slice(array, Pack.pack(vals, :float32), start: {0, 0}, stop: {100, 8})
 
-batches =
+chunk_shapes =
   array
-  |> Array.stream_chunks(concurrency: 2)
-  |> Stream.map(fn {_index, data} -> Nx.from_binary(data, {:f, 32}) end)
-  |> Stream.chunk_every(2)
-  |> Enum.to_list()
+  |> ExZarr.Nx.stream_chunk_tensors(concurrency: 2, ordered: true)
+  |> Enum.map(fn {:ok, tensor} -> Nx.shape(tensor) end)
 
-%{batch_count: length(batches), first_batch_shapes: Enum.map(hd(batches), &Nx.shape/1)}
+%{chunk_shapes: chunk_shapes}
 ```
 
 ## DataLoader (sample-level batches)

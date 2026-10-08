@@ -175,17 +175,16 @@ Vl.new(width: 300, height: 300, title: "Zarr Array: Divided into 16 Chunks (4×4
 
 # ### Why Nx? Understanding Elixir's Numerical Computing Library
 
-# Nx (Numerical Elixir) is Elixir's numerical computing library, similar to NumPy in Python. ExZarr integrates deeply with Nx for several compelling reasons:
+# Nx is the Elixir library for math on a grid of numbers: sums and means, matrix multiplies, and the gradients a training step needs. ExZarr stores those grids; Nx computes on them.
 
 # #### What is Nx?
 
-# Nx provides multi-dimensional tensors (arrays) with:
+# You use Nx when the same operation should hit every element of a multi-dimensional array at once. A tensor is that grid in memory.
 
-# * **Type safety:** Compile-time shape and type checking
-# * **Defn compilation:** JIT compilation of numerical functions to CPU/GPU
-# * **Backend flexibility:** CPU (BinaryBackend), GPU (EXLA/Torchx), TPU support
-# * **Lazy evaluation:** Build computation graphs before execution
-# * **Broadcasting:** Automatic shape alignment like NumPy
+# * **Summaries and linear algebra:** sum, mean, dot products, matrix multiplies
+# * **Training:** prediction steps and gradients. Axon builds models on Nx
+# * **Defn compilation:** those expressions compile for the CPU, or for a GPU through EXLA or Torchx
+# * **Backends:** CPU (`BinaryBackend`) by default; EXLA and Torchx for accelerators
 
 # #### Why ExZarr Uses Nx
 

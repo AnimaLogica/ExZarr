@@ -17,7 +17,7 @@ Add `ex_zarr` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"}
+    {:ex_zarr, "~> 1.3"}
   ]
 end
 ```
@@ -429,6 +429,89 @@ Common errors:
 - **`:not_found`**: Array or chunk not found
 - **`:dimension_mismatch`**: Data shape doesn't match slice dimensions
 
+## Using Nx
+
+Nx is optional. Add `{:nx, "~> 0.7"}` next to `ex_zarr` when you want in-memory numerical work on data that lives in a Zarr array.
+
+### What is Nx
+
+[Nx](https://hexdocs.pm/nx) is the Elixir library for math on a grid of numbers. You use it when the same operation should hit every element, row, or matrix at once, instead of walking the data in an Elixir loop.
+
+Typical jobs:
+
+- Summaries: sum, mean, min, max over an image, a table, or a cube of measurements
+- Linear algebra: dot products and matrix multiplies
+- Training: the prediction step and the gradient of a loss. [Axon](https://hexdocs.pm/axon) builds models on top of Nx
+- Compiled runs: `defn` turns those expressions into code for the CPU, or for a GPU through EXLA or Torchx
+
+A tensor is that grid in memory: one contiguous binary, a type such as `{:f, 32}`, a shape tuple, and a backend. The default backend is `Nx.BinaryBackend`.
+
+ExZarr does not run that math. It keeps the bytes on disk or in a store so the process can exit and so another language can open the same array. `ExZarr.Nx` copies a Zarr array into a tensor when you want to compute, and copies a tensor back when you want to store the result.
+
+### When to Use It
+
+Use `ExZarr.Nx` when the numbers are already in a Zarr array, or when a tensor should be written as one:
+
+- The array is larger than you want in RAM, so you stream chunks or batches.
+- Training data and labels should stay aligned on the first axis.
+- A result tensor should be saved as Zarr and reopened from Python.
+- Model weights or an intermediate cube should be checkpointed as an array.
+
+```elixir
+{:ok, array} = ExZarr.open(path: "/data/features")
+{:ok, tensor} = ExZarr.Nx.to_tensor(array)
+Nx.mean(tensor)
+```
+
+### When not to use it
+
+Skip the bridge when the tensor already fits in memory and nothing else needs to read it. Stay on `Nx` alone.
+
+Skip it when the access pattern is a few scalar lookups. A Zarr read loads a chunk, so random single-element access pays I/O and decompression for a whole chunk.
+
+Skip it for `{:bf, 16}`, `{:f, 16}`, and complex tensors. Those types are not in the Zarr dtypes ExZarr stores. Keep float32 on disk and cast after `to_tensor/2`.
+
+### Quick Guide to Nx functionality
+
+| Function | What you get |
+| --- | --- |
+| `ExZarr.Nx.to_tensor/2` | The whole array as one tensor |
+| `ExZarr.Nx.from_tensor/2` | A new array filled from a tensor |
+| `ExZarr.Nx.stream_chunk_tensors/2` | One tensor per stored chunk. The last chunk is cropped to the array bounds |
+| `ExZarr.Nx.to_tensor_chunked/3` | Tensors for rectangular regions you choose, which can differ from `chunks` |
+| `ExZarr.Nx.DataLoader.batch_stream/3` | Batches of a fixed number of samples along axis 0 |
+| `ExZarr.Nx.DataLoader.paired_batch_stream/4` | Matching feature and label batches |
+| `ExZarr.Nx.zarr_to_nx_type/1` | `:float32` → `{:f, 32}`, and the other nine numeric dtypes |
+
+`stream_chunk_tensors/2` forwards `:concurrency` and `:on_error` to `Array.stream_chunks/2`. `:names` and `:backend` apply to each tensor.
+
+`DataLoader` reads with `get_slice/2`, so a batch can cross a chunk boundary. `shuffled_batch_stream/3` permutes every sample index for the epoch. `:seed` repeats that order. `:shuffle_buffer_size` is accepted and ignored.
+
+```elixir
+array
+|> ExZarr.Nx.stream_chunk_tensors(concurrency: 4)
+|> Enum.map(fn {:ok, chunk} -> Nx.sum(chunk) end)
+```
+
+The livebooks under `docs/livebooks/03_nx_ml/` and `docs/livebooks/nx_streaming.livemd` run these calls. The rest of the API is in the [Nx integration guide](nx_integration.md).
+
+### Deep Dive in how data is stored in Nx versus Zarr and how we exchange data between the two
+
+An Nx tensor is one buffer. For `Nx.iota({6, 4}, type: {:f, 32})` that buffer is `6 * 4 * 4` bytes, row-major (C order), with the shape stored beside the binary. Names and the backend are metadata in the tensor struct. Nothing is compressed. Nothing is split into files.
+
+A Zarr array is a directory (or an object prefix, or an in-memory map). `zarr.json` or `.zarray` records shape, chunk shape, and dtype. The numbers sit in separate chunk objects. An array of shape `{6, 4}` with chunks `{4, 4}` is three chunk slots along the first axis: two full `{4, 4}` chunks and one edge chunk whose logical shape is `{2, 4}`. ExZarr often stores that edge chunk padded out to the full chunk shape, with the fill value past the array bounds.
+
+The element types match on the ten numeric dtypes. `:float32` on disk is `{:f, 32}` in Nx. Both sides use little-endian IEEE layout for the values ExZarr writes. The names differ (`:float32` versus `{:f, 32}`); `zarr_to_nx_type/1` and `nx_to_zarr_type/1` translate them. Shapes are tuples on both sides, so `{6, 4}` does not need a reshape of the *logical* array, only of each chunk binary.
+
+Exchange is a copy through that binary layout:
+
+1. **Array to tensor.** `to_tensor/2` reads every chunk, decompresses it, and concatenates the bytes in C order into one binary. `Nx.from_binary/2` builds the tensor and `Nx.reshape/2` attaches the array shape. The tensor then lives in the backend you asked for (`:backend` calls `Nx.backend_transfer/2`).
+2. **Tensor to array.** `from_tensor/2` reads `Nx.to_binary/1`, creates an array with the tensor shape and the dtype you mapped, and writes chunk-sized slices. You choose `chunks`. That choice is about later reads, not about how Nx laid the tensor out.
+3. **One chunk at a time.** `stream_chunk_tensors/2` does not concatenate. Each chunk binary becomes its own tensor. If the stored bytes are the padded full chunk, the helper keeps only the in-bounds region before `Nx.reshape/2`.
+4. **A batch of samples.** `DataLoader` calls `get_slice/2` for a range on axis 0. That read may open two chunks, stitch the requested rows, and hand `Nx.from_binary/2` a binary whose length is `batch * rest_of_shape * itemsize`.
+
+There is no shared memory between the array and the tensor. Decompression, the slice stitch, and `from_binary` each produce a new binary. After the tensor exists, Nx operations do not touch the Zarr store until you write again with `from_tensor/2` or `set_slice/3`.
+
 ## Next Steps
 
 Now that you understand the basics:
@@ -444,6 +527,7 @@ Now that you understand the basics:
    - `sharded_cloud_storage.exs`: Using sharding with S3
    - `dimension_names.exs`: Named dimension slicing
    - `nx_integration.exs`: Integration with Nx numerical library
+   - The [Using Nx](#using-nx) section above, and [Nx integration](nx_integration.md) for the full API
 
 3. **Read API documentation**: Browse the full API at https://hexdocs.pm/ex_zarr
 

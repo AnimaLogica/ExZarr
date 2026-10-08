@@ -1,3 +1,18 @@
+## Status (v1.3.0)
+
+Shipped for 1.3.0:
+
+- `01_core_zarr/01_01` through `01_04`
+- `03_nx_ml/03_01_zarr_to_nx.livemd`
+- `03_nx_ml/03_02_streaming_minibatches.livemd`
+- `03_nx_ml/03_03_training_from_zarr.livemd`
+- `04_ai_genai/04_01_embeddings_in_zarr.livemd`
+- `05_finance/05_01_tick_data_cube.livemd`
+- `06_cookbook/06_01` through `06_07`
+- `nx_streaming.livemd`
+
+Deferred past 1.3.0: `02_concurrency`, `04_02`–`04_15`, `05_02`–`05_12`, `06_crypto` through `09_systems`, and the rest of the table below. Arrow and Explorer livebooks belong with ex_arrow. Binsparse livebooks belong with ex_graphblas.
+
 The livebooks directry should be a curated collection of **Elixir Livebooks** demonstrating how to use
 **ExZarr** — a Zarr v3–compatible array storage library — to build scalable data systems
 for **AI / GenAI, finance, crypto, and scientific workloads**.

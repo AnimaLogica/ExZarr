@@ -21,6 +21,7 @@ interop tested in CI against zarr-python 2.18 / 3.2 / 3.3 / 3.4. See
 - **High Performance** - 26x faster multi-chunk reads with near-optimal scaling (see [Performance Guide](docs/guides/performance.md))
 - **N-dimensional arrays** with support for 10 data types (int8-64, uint8-64, float32/64)
 - **BEAM-native streaming** - `stream_chunks/2`, `stream_slices/3`, and `write_stream/3` for bounded-memory processing
+- **Nx** - `ExZarr.Nx` converts arrays and chunks to tensors; `ExZarr.Nx.DataLoader` streams sample-axis batches for training. Nx is optional. See [Using Nx](docs/guides/getting_started.md#using-nx)
 - **Telemetry** - `:telemetry` events for chunk I/O and stream lifecycle (`ExZarr.Telemetry`)
 - **Pipeline integrations** - Optional Flow, GenStage, and Broadway support for production pipelines
 - **Parallel chunk processing** - Automatic parallel I/O and decompression for large operations
@@ -39,7 +40,7 @@ Add `ex_zarr` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_zarr, "~> 1.2"}
+    {:ex_zarr, "~> 1.3"}
   ]
 end
 ```
@@ -832,7 +833,8 @@ Practical examples demonstrating real-world usage:
   - Intuitive slicing by name instead of index
   - Real-world examples (climate, medical imaging)
   - Validation and best practices
-- **[Nx Integration](examples/nx_integration.exs)** - Numerical computing with Nx
+- **[Using Nx](docs/guides/getting_started.md#using-nx)** — what Nx is, when it fits, and how tensors and Zarr chunks exchange bytes
+- **[Nx Integration](docs/guides/nx_integration.md)** — conversion API, chunk streams, and DataLoader
   - Converting between Nx tensors and Zarr arrays
   - Machine learning workflows
   - Streaming large arrays
@@ -872,6 +874,10 @@ Key modules:
 
 See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
+**v1.3.0 (released 2026-10-08)** - Data science interop:
+`ExZarr.Nx.stream_chunk_tensors/2`, DataLoader batch recipes, livebook MVP
+(metadata, Nx conversion, minibatches, a small Axon train).
+
 **v1.2.0 (released 2026-10-04)** - Zarr 3.1 interoperability & range-aware cloud I/O:
 spec `sharding_indexed`, optional byte-range reads, version-aware cloud keys,
 AzureSDK migration, codecs via ExCodecs (no native toolchain), `compressor_config`,
@@ -879,8 +885,6 @@ Python fixture/CI matrix.
 
 **Upcoming** (high level):
 
-- **v1.3.0** - **Data science interop**
-  Explorer streaming, Nx batch recipes from `stream_chunks`, livebook curriculum, cookbook expansion.
 - **v1.4.0** - **Performance & packaging**
   Async codec pipeline (overlap I/O + decode), vendored/static codecs, adaptive range coalescing,
   storage-transformer execution.

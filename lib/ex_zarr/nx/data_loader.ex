@@ -56,6 +56,20 @@ defmodule ExZarr.Nx.DataLoader do
       |> Enum.each(fn {:ok, {x_batch, y_batch}} ->
         train_step(model, x_batch, y_batch)
       end)
+
+  ## Batches vs chunk streams
+
+  `batch_stream/3` and `shuffled_batch_stream/3` slice along the first axis with
+  `ExZarr.Array.get_slice/2`. A batch can cross stored chunk boundaries, and
+  the batch size is independent of `array.chunks`.
+
+  `ExZarr.Nx.stream_chunk_tensors/2` yields one tensor per stored chunk and
+  forwards `:concurrency` to `stream_chunks/2`. Use it for chunk-aligned
+  reductions. Use this module when the training step needs a fixed sample count.
+
+  `shuffled_batch_stream/3` materializes and shuffles every sample index for
+  the epoch. `:shuffle_buffer_size` is accepted for compatibility and ignored;
+  there is no partial shuffle buffer.
   """
 
   alias ExZarr.Array
@@ -66,7 +80,7 @@ defmodule ExZarr.Nx.DataLoader do
 
   - `:drop_remainder` - Drop incomplete final batch (default: false)
   - `:seed` - Random seed for shuffling (default: nil, uses random)
-  - `:shuffle_buffer_size` - Size of shuffle buffer (default: batch_size * 10)
+  - `:shuffle_buffer_size` - Accepted and ignored. Shuffling uses the full index list.
   - `:backend` - Nx backend to transfer tensors to (default: nil)
   - `:names` - Axis names for tensors (default: nil)
   """
@@ -156,19 +170,18 @@ defmodule ExZarr.Nx.DataLoader do
   Streams shuffled batches from ExZarr array for ML training.
 
   Randomizes sample order before batching, which typically improves training
-  convergence. Uses a shuffle buffer to balance memory usage and randomization quality.
+  convergence.
 
   ## Shuffling Strategy
 
-  Uses reservoir sampling with a configurable buffer size:
-  - Larger buffer: Better randomization, more memory
-  - Smaller buffer: Less memory, local randomization
-  - Default: 10x batch size
+  Builds the full sample-index list, shuffles it, then loads each batch with
+  `get_slice/2` (one read per sample). Memory for the index list is
+  O(number of samples). `:shuffle_buffer_size` is ignored.
 
   ## Options
 
   - `:seed` - Random seed for reproducibility (default: random)
-  - `:shuffle_buffer_size` - Buffer size for shuffling (default: batch_size * 10)
+  - `:shuffle_buffer_size` - Accepted and ignored
   - `:drop_remainder` - Drop incomplete final batch (default: false)
   - `:backend` - Nx backend to transfer tensors to (default: nil)
   - `:names` - Axis names for tensors (default: nil)
