@@ -363,9 +363,9 @@ defmodule ExZarr.ChunkStreamingTest do
           )
       end
 
-      # Measure memory before streaming
-      :erlang.garbage_collect()
-      memory_before = :erlang.memory(:total)
+      # Measure this process only. `:erlang.memory(:total)` includes every
+      # async test in the VM, so the delta moves when the suite runs in parallel.
+      memory_before = process_memory()
 
       # Stream chunks without collecting them all - use sequential mode for constant memory
       chunk_count =
@@ -377,15 +377,13 @@ defmodule ExZarr.ChunkStreamingTest do
           acc + 1
         end)
 
-      :erlang.garbage_collect()
-      memory_after = :erlang.memory(:total)
+      memory_after = process_memory()
 
       memory_delta_mb = (memory_after - memory_before) / (1024 * 1024)
 
-      # Memory growth should be minimal
-      # Allow for some variance in OTP versions (< 50MB is reasonable for streaming)
-      assert memory_delta_mb < 50,
-             "Memory grew by #{memory_delta_mb}MB, expected < 50MB"
+      # 50 chunks are 20 KB. Retaining the whole 1000×1000 array would be 4 MB.
+      assert memory_delta_mb < 2,
+             "Memory grew by #{memory_delta_mb}MB, expected < 2MB"
 
       assert chunk_count <= 50
     end
@@ -422,5 +420,21 @@ defmodule ExZarr.ChunkStreamingTest do
 
       assert Enum.empty?(chunks2) == false
     end
+  end
+
+  defp process_memory do
+    :erlang.garbage_collect()
+    {:memory, bytes} = :erlang.process_info(self(), :memory)
+
+    binary_bytes =
+      case :erlang.process_info(self(), :binary) do
+        {:binary, bins} ->
+          Enum.reduce(bins, 0, fn {_ref, size, _count}, acc -> acc + size end)
+
+        _ ->
+          0
+      end
+
+    bytes + binary_bytes
   end
 end
