@@ -3,7 +3,7 @@
 # Title: Welcome to ExZarr
 
 # Mix.install([
-#   # {:ex_zarr, "~> 1.2"},
+#   # {:ex_zarr, "~> 1.3"},
 #   {:ex_zarr, path: "/Users/thanos/work/ExZarr"},
 #   {:nx, "~> 0.7"},
 #   {:kino, "~> 0.13"},

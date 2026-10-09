@@ -3,7 +3,7 @@
 # Title: Your First Zarr Array
 
 Mix.install([
-  {:ex_zarr, "~> 1.2"},
+  {:ex_zarr, "~> 1.3"},
   {:kino, "~> 0.13"}
 ])
 

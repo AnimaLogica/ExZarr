@@ -874,6 +874,10 @@ Key modules:
 
 See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
+**v1.3.1 (released 2026-10-09)** - Patch release: faster Nx chunk crops and
+shuffled batches, livebooks checked in CI, measured performance figures. See
+[release notes](docs/release_notes_v1_3_1.md).
+
 **v1.3.0 (released 2026-10-08)** - Data science interop:
 `ExZarr.Nx.stream_chunk_tensors/2`, DataLoader batch recipes, livebook MVP
 (metadata, Nx conversion, minibatches, a small Axon train).

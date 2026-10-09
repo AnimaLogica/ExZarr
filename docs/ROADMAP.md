@@ -35,6 +35,12 @@ Released 2026-10-08.
 - [x] Livebook MVP: metadata, Zarr↔Nx, minibatches, Axon toy train
 - [ ] ~~Explorer direct streaming~~ Dropped from 1.3: columnar data and Explorer belong in [ex_arrow](https://hex.pm/packages/ex_arrow), and Binsparse in [ex_graphblas](https://hex.pm/packages/ex_graphblas)
 
+### v1.3.1
+
+Released 2026-10-09. Patch release: faster edge-chunk crops and shuffled
+batching, shuffling that leaves the caller's `:rand` state alone, runnable
+livebooks checked in CI, and measured performance figures in the Nx docs.
+
 ---
 
 ## v1.4.0 (Planned) - Performance & Packaging

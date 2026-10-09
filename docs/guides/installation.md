@@ -181,7 +181,7 @@ If tests pass, your installation is complete and working correctly.
 
 ```elixir
 iex> Application.spec(:ex_zarr, :vsn) |> to_string()
-"1.3.0"
+"1.3.1"
 ```
 
 ## Build Troubleshooting

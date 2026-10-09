@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-09
+
+Patch release from the v1.3.0 review: faster Nx chunk and batch streams, a
+shuffle that leaves the caller's random state alone, livebooks that run, and
+docs that match measured behaviour. No public API was removed or renamed.
+
 ### Fixed
 - `ExZarr.Nx.stream_chunk_tensors/2` crops padded edge chunks with one
   contiguous copy per row instead of one copy per element. A 999x1000 float32
@@ -32,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment carried forward, like Livebook, names the failing cell, and keeps
   the end of long output. `--local` runs notebooks against this checkout
   instead of the Hex release. CI runs `mix livebook.test --local`.
+- Livebooks, notebooks and guide install snippets use `{:ex_zarr, "~> 1.3"}`.
+- The Nx guide and `ExZarr.Nx` docs replace unbenchmarked speed claims
+  ("5-10x", "400-800 MB/s") with measured timings, and the chunk-reduction
+  example uses `include_missing: true` and `on_error: :halt` so its total is
+  correct.
+- The v1.3.0 entries in this changelog, the release notes, and the roadmap now
+  say that Explorer streaming was planned for 1.3 and dropped.
+
+### Tests
+- The streaming memory test measures the test process instead of the whole VM,
+  so other async tests no longer move the result; the limit is now 2 MB.
+- New tests cover `stream_chunk_tensors/2` options (`:include_missing`,
+  `:on_error`, `:backend`, unordered concurrency), 3D and 4D edge crops, seeded
+  shuffle orders matching 1.3.0, and cell-by-cell livebook evaluation.
 
 ## [1.3.0] - 2026-10-08
 
@@ -932,7 +952,8 @@ None - Full backward compatibility maintained with v2 arrays
 
 ---
 
-[Unreleased]: https://github.com/AnimaLogica/ExZarr/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/AnimaLogica/ExZarr/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/AnimaLogica/ExZarr/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/AnimaLogica/ExZarr/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/AnimaLogica/ExZarr/releases/tag/v1.2.0
 [1.1.0]: https://github.com/AnimaLogica/ExZarr/releases/tag/v1.1.0
