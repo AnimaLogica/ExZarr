@@ -13,6 +13,16 @@
 #
 # To run live cloud/Python tests locally:
 #   mix test --include s3 --include gcs --include azure --include mongo --include mnesia --include python
-ExUnit.configure(exclude: [:s3, :gcs, :azure, :mongo, :mnesia, :python, :python_fixtures])
+#
+# Wall-clock and memory benchmarks are also excluded by default:
+# - :performance - asserts elapsed time (e.g. an 8 MB conversion under 5 s)
+# - :memory      - asserts memory growth while streaming
+# Their results depend on how loaded the machine is, so on shared CI runners
+# they fail without any code change. CI runs them in the non-blocking
+# "Benchmarks" job. Run them locally with:
+#   mix test --only performance --only memory
+ExUnit.configure(
+  exclude: [:s3, :gcs, :azure, :mongo, :mnesia, :python, :python_fixtures, :performance, :memory]
+)
 
 ExUnit.start()

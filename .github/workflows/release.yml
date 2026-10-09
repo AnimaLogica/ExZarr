@@ -85,8 +85,9 @@ jobs:
         run: mix compile --warnings-as-errors
 
       # Functional suite. Wall-clock and memory benchmarks (:performance,
-      # :memory) are noisy on shared runners when tests run in parallel; CI
-      # runs them serially (mix test --trace) on every push to main.
+      # :memory) are excluded by test/test_helper.exs; the flags below repeat
+      # that so the release gate does not depend on it. CI runs them in its
+      # non-blocking "Benchmarks" job.
       - name: Run tests
         run: mix test --exclude performance --exclude memory
 

@@ -82,7 +82,9 @@ jobs:
         # Excluded (require external services):
         # ✗ S3, GCS, Azure, MongoDB, Mnesia
         #
-        # Exclusions are configured in test/test_helper.exs
+        # Exclusions are configured in test/test_helper.exs. Wall-clock and
+        # memory benchmarks (:performance, :memory) are excluded there too and
+        # run in the non-blocking "Benchmarks" job below.
         # To run all tests locally:
         # mix test --include s3 --include gcs --include azure --include mongo --include mnesia
         run: mix test --trace
@@ -181,6 +183,42 @@ jobs:
         run: |
           echo "Checking for undocumented public functions..."
           mix docs --warnings-as-errors
+
+  # Wall-clock and memory benchmarks. Shared runners vary in speed and load, so
+  # these report regressions without blocking merges: a failure shows in this
+  # job's log and annotations while the workflow stays green.
+  benchmarks:
+    name: Benchmarks (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      MIX_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.5"
+          otp-version: "28.1"
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-benchmarks-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-benchmarks-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Run benchmark tests
+        run: mix test --only performance --only memory
 
   livebooks:
     name: Livebooks

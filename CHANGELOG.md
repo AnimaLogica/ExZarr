@@ -47,6 +47,12 @@ docs that match measured behaviour. No public API was removed or renamed.
   say that Explorer streaming was planned for 1.3 and dropped.
 
 ### Tests
+- Wall-clock and memory benchmark tests (`:performance`, `:memory`) are
+  excluded from the default `mix test` run and from blocking CI. They failed
+  CI three times on shared runners with no code change (for example, an 8 MB
+  `from_tensor/2` took 6.3 s on one runner and 0.64 s locally). CI runs them
+  in a separate non-blocking "Benchmarks" job; run them locally with
+  `mix test --only performance --only memory`.
 - The streaming memory test measures the test process instead of the whole VM,
   so other async tests no longer move the result; the limit is now 2 MB.
 - New tests cover `stream_chunk_tensors/2` options (`:include_missing`,
