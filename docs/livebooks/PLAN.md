@@ -1,6 +1,6 @@
-## Status (v1.3.0)
+## Status (v1.3.1)
 
-Shipped for 1.3.0:
+Shipped in 1.3.0; in 1.3.1 every notebook below runs in CI against the current code:
 
 - `01_core_zarr/01_01` through `01_04`
 - `03_nx_ml/03_01_zarr_to_nx.livemd`
@@ -13,7 +13,7 @@ Shipped for 1.3.0:
 
 Deferred past 1.3.0: `02_concurrency`, `04_02`–`04_15`, `05_02`–`05_12`, `06_crypto` through `09_systems`, and the rest of the table below. Arrow and Explorer livebooks belong with ex_arrow. Binsparse livebooks belong with ex_graphblas.
 
-The livebooks directry should be a curated collection of **Elixir Livebooks** demonstrating how to use
+The livebooks directory should be a curated collection of **Elixir Livebooks** demonstrating how to use
 **ExZarr** — a Zarr v3–compatible array storage library — to build scalable data systems
 for **AI / GenAI, finance, crypto, and scientific workloads**.
 

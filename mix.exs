@@ -1,7 +1,7 @@
 defmodule ExZarr.MixProject do
   use Mix.Project
 
-  @version "1.3.0"
+  @version "1.3.1"
   @source_url "https://github.com/AnimaLogica/ExZarr"
 
   def project do
@@ -200,6 +200,7 @@ defmodule ExZarr.MixProject do
         "docs/release_notes_v1_1_0.md",
         "docs/release_notes_v1_2_0.md",
         "docs/release_notes_v1_3_0.md",
+        "docs/release_notes_v1_3_1.md",
         "docs/ROADMAP.md",
         "docs/ZARR_V3_STATUS.md",
         "docs/INTEROPERABILITY.md",
@@ -290,6 +291,7 @@ defmodule ExZarr.MixProject do
           "docs/release_notes_v1_1_0.md",
           "docs/release_notes_v1_2_0.md",
           "docs/release_notes_v1_3_0.md",
+          "docs/release_notes_v1_3_1.md",
           "docs/migration_guide_v1_1_0.md"
         ],
         Reference: [
